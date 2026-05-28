@@ -11,14 +11,14 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
-    logger.info(f"BarberBot arrancando — entorno: {settings.app_env}")
+    logger.info(f"ReservBot arrancando — entorno: {settings.app_env}")
     yield
-    logger.info("BarberBot apagándose")
+    logger.info("ReservBot apagándose")
 
 
 app = FastAPI(
-    title="BarberBot",
-    description="Agente de WhatsApp para agendar citas en barberías",
+    title="ReservBot",
+    description="Agente de WhatsApp para agendar citas",
     version="0.1.0",
     lifespan=lifespan,
 )

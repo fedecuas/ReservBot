@@ -1,13 +1,13 @@
-# BarberBot 💈
+# ReservBot 📅
 
-> Agente de WhatsApp con LLM que agenda citas automáticamente para barberías en LATAM.
+> Agente de WhatsApp con LLM que agenda citas automáticamente en LATAM.
 
 ## Setup rápido
 
 ```bash
 # 1. Clonar y entrar
-git clone https://github.com/tu-usuario/barberbot
-cd barberbot
+git clone https://github.com/fedecuas/ReservBot.git
+cd reservbot
 
 # 2. Entorno virtual
 python -m venv .venv
@@ -53,7 +53,7 @@ Ver `.env.example` para la lista completa.
 ## Estructura
 
 ```
-barberbot/
+reservbot/
 ├── app/
 │   ├── main.py              # Entry point FastAPI
 │   ├── core/
