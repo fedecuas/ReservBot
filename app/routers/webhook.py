@@ -1,5 +1,6 @@
 import hmac
 import hashlib
+import asyncio
 from fastapi import APIRouter, Request, HTTPException, Query
 from app.core.config import get_settings
 from app.core.logging import get_logger
@@ -110,7 +111,10 @@ async def receive_message(request: Request):
         intent = response_json.get("intent")
 
         if intent == "agendar" and not state.appointment_data.get("servicio"):
-            # Solo mostrar lista si NO hay servicio guardado en el ESTADO
+            nombre = state.appointment_data.get("nombre", "")
+            saludo = f"¡Perfecto {nombre}! Te muestro nuestros servicios 😊" if nombre else "¡Con gusto! Te muestro nuestros servicios 😊"
+            await send_text_message(to=phone, message=saludo)
+            await asyncio.sleep(0.5)  # pequeña pausa para que lleguen en orden
             business = get_business_by_phone(settings.phone_number_id)
             await send_service_list(to=phone, services=business.services)
         else:
