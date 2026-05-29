@@ -113,7 +113,21 @@ async def receive_message(request: Request):
         # 5. Responder con texto de Claude o Lista Interactiva
         servicio_guardado = state.appointment_data.get("servicio")
 
-        if response_json.get("intent") == "agendar" and not servicio_guardado:
+        # Después de guardar estado, antes del if necesita_lista
+        logger.info(f"servicio_guardado: {servicio_guardado}")
+        logger.info(f"intent: {response_json.get('intent')}")
+        logger.info(f"servicio en response: {response_json.get('servicio')}")
+
+        # Detectar si el cliente quiere agendar y no tiene servicio confirmado via lista interactiva
+        necesita_lista = (
+            response_json.get("intent") == "agendar" and 
+            not servicio_guardado
+        ) or (
+            response_json.get("intent") == "consultar" and
+            ("servicio" in text.lower() or "cuál" in text.lower() or "cuales" in text.lower() or "qué tienen" in text.lower())
+        )
+
+        if necesita_lista:
             nombre = state.appointment_data.get("nombre", "")
             saludo = f"¡Perfecto {nombre}! Te muestro nuestros servicios 😊" if nombre else "¡Con gusto! Te muestro nuestros servicios 😊"
             await send_text_message(to=phone, message=saludo)
