@@ -61,15 +61,18 @@ async def receive_message(request: Request):
             continue
 
         if msg.type == "interactive":
-            service_id = msg.interactive_reply_id  # el id seleccionado
-            service_title = msg.interactive_reply_title
+            logger.info(f"Respuesta interactiva recibida: id={msg.interactive_reply_id}, title={msg.interactive_reply_title}")
             state = await state_manager.get_state(msg.from_number)
-            state.appointment_data["servicio"] = service_title
+            logger.info(f"Estado antes de guardar servicio: {state.appointment_data}")
+            
+            state.appointment_data["servicio"] = msg.interactive_reply_title
             state.current_intent = "agendar"
             await state_manager.save_state(state)
+            logger.info(f"Servicio guardado: {state.appointment_data}")
+            
             await send_text_message(
                 to=msg.from_number,
-                message=f"Perfecto, seleccionaste *{service_title}*. ¿Qué día te viene mejor?"
+                message=f"Perfecto, seleccionaste *{msg.interactive_reply_title}*. ¿Qué día te viene mejor?"
             )
             continue
 
