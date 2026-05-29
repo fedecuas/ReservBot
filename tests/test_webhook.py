@@ -38,7 +38,8 @@ def test_webhook_verify_invalid_token():
 
 
 def test_webhook_post_returns_ok():
-    with patch("app.routers.webhook.settings") as mock_settings:
+    with patch("app.routers.webhook.settings") as mock_settings, \
+         patch("app.routers.webhook.send_text_message") as mock_send:
         mock_settings.is_production = False
         payload = {
             "object": "whatsapp_business_account",
@@ -57,5 +58,10 @@ def test_webhook_post_returns_ok():
             }]
         }
         res = client.post("/webhook", json=payload)
+        mock_send.assert_called_once_with(
+            to="5215512345678",
+            message="Hola! Soy ReservBot 🤖 ¿En qué te puedo ayudar?"
+        )
     assert res.status_code == 200
     assert res.json() == {"status": "ok"}
+

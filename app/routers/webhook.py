@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request, HTTPException, Query
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.whatsapp import WebhookPayload
+from app.services.whatsapp_sender import send_text_message
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 logger = get_logger(__name__)
@@ -57,9 +58,11 @@ async def receive_message(request: Request):
 
         logger.info(f"Mensaje recibido de {msg.from_number}: {msg.text_body!r}")
 
-        # TODO semana 2: importar y llamar al orchestrator
-        # from app.services.orchestrator import handle_message
-        # await handle_message(msg.from_number, msg.text_body)
+        # Responder automáticamente
+        await send_text_message(
+            to=msg.from_number,
+            message="Hola! Soy ReservBot 🤖 ¿En qué te puedo ayudar?"
+        )
 
     return {"status": "ok"}
 
