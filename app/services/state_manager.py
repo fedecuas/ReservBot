@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime, timezone
 from typing import Any
 from pydantic import BaseModel, Field
@@ -28,23 +29,16 @@ class StateManager:
     Gestiona el estado de las conversaciones guardándolo en Redis o en memoria.
     """
     def __init__(self):
-        import os
-        self.redis_client = None
         self._in_memory_db = {}  # Fallback: {phone: (ConversationState, datetime_saved)}
         
-        redis_url = settings.redis_url or os.getenv("REDIS_URL")
-        logger.info(f"StateManager iniciando — REDIS_URL: {'configurado' if redis_url else 'NO configurado'}")
-        
-        if redis_url:
-            try:
-                # redis.from_url es perezoso y no lanza error de conexión de inmediato
-                self.redis_client = redis.from_url(redis_url, decode_responses=True)
-                logger.info("StateManager: Cliente de Redis configurado.")
-            except Exception as e:
-                logger.warning(f"StateManager: Error configurando el cliente de Redis: {e}. Se usará memoria.")
-                self.redis_client = None
+        REDIS_URL = os.environ.get("REDIS_URL") or os.environ.get("REDIS_PRIVATE_URL")
+
+        if REDIS_URL:
+            self.redis = redis.from_url(REDIS_URL, decode_responses=True)
+            logger.info(f"Redis conectado: {REDIS_URL[:30]}...")
         else:
-            logger.info("StateManager: Sin redis_url configurada. Se usará memoria.")
+            self.redis = None
+            logger.warning("REDIS_URL no encontrada — usando memoria")
 
     async def get_state(self, phone: str) -> ConversationState:
         """
@@ -52,9 +46,9 @@ class StateManager:
         Si no existe, retorna uno nuevo.
         """
         # Intentar obtener de Redis
-        if self.redis_client:
+        if self.redis:
             try:
-                data = await self.redis_client.get(f"state:{phone}")
+                data = await self.redis.get(f"state:{phone}")
                 if data:
                     state_dict = json.loads(data)
                     return ConversationState.model_validate(state_dict)
@@ -89,11 +83,11 @@ class StateManager:
         phone = state.phone_number
 
         # Intentar guardar en Redis
-        if self.redis_client:
+        if self.redis:
             try:
                 # model_dump_json maneja la serialización de datetime automáticamente
                 json_data = state.model_dump_json()
-                await self.redis_client.setex(f"state:{phone}", 86400, json_data)
+                await self.redis.setex(f"state:{phone}", 86400, json_data)
                 return True
             except Exception as e:
                 logger.error(f"StateManager: Error al guardar estado en Redis para {phone}: {e}. Guardando en memoria.")
@@ -109,9 +103,9 @@ class StateManager:
         deleted_any = False
 
         # Intentar borrar de Redis
-        if self.redis_client:
+        if self.redis:
             try:
-                result = await self.redis_client.delete(f"state:{phone}")
+                result = await self.redis.delete(f"state:{phone}")
                 if result > 0:
                     deleted_any = True
             except Exception as e:

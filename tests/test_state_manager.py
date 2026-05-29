@@ -6,7 +6,7 @@ from app.services.state_manager import ConversationState, StateManager
 @pytest.mark.anyio
 async def test_state_manager_in_memory():
     manager = StateManager()
-    manager.redis_client = None  # Forzar uso de memoria
+    manager.redis = None  # Forzar uso de memoria
     
     phone = "1234567890"
     
