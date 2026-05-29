@@ -26,8 +26,7 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         logger.error("Anthropic API key no está configurada en settings.")
         return fallback_response
 
-    # 1. Limpiar y estructurar el historial para cumplir con las reglas de Anthropic
-    # Anthropic requiere alternancia estricta user <-> assistant y que empiece con user.
+    # 1. Limpiar y estructurar el historial
     raw_messages = []
     for msg in conversation_history:
         role = msg.get("role", "user")
@@ -35,10 +34,8 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
             role = "user" if role == "user" else "assistant"
         raw_messages.append({"role": role, "content": msg.get("content", "")})
 
-    # Añadir el mensaje actual del usuario
     raw_messages.append({"role": "user", "content": message})
 
-    # Alternar y mezclar mensajes consecutivos del mismo rol
     messages = []
     for msg in raw_messages:
         role = msg["role"]
@@ -50,14 +47,13 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         else:
             messages.append({"role": role, "content": content})
 
-    # Si por alguna razón el primer mensaje no es "user", lo eliminamos o insertamos uno ficticio
     if messages and messages[0]["role"] != "user":
         messages.pop(0)
 
     if not messages:
         return fallback_response
 
-    # 2. Configurar la llamada a Claude con contexto de datos ya recopilados
+    # 2. Configurar el prompt
     business = get_business_by_phone(settings.phone_number_id)
     business_name = business.name if business else "Barbería El Estilo"
 
@@ -67,25 +63,42 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
     hora = appointment_data.get("hora") or "no proporcionada"
 
     system_prompt = (
-        f"Eres Valentina, la recepcionista virtual de {business_name}. \n"
-        "Tienes una personalidad cálida, profesional y empática. \n"
+        f"Eres Valentina, la recepcionista virtual de {business_name}.\n"
+        "Tienes una personalidad cálida, profesional y empática.\n"
         "Haces sentir a cada cliente especial y bienvenido.\n\n"
+
         "DATOS YA RECOPILADOS:\n"
         f"- Nombre: {nombre}\n"
-        f"- Servicio: {servicio}  \n"
+        f"- Servicio: {servicio}\n"
         f"- Fecha: {fecha}\n"
         f"- Hora: {hora}\n\n"
-        "REGLAS ESTRICTAS:\n"
-        "1. Si NO tienes el nombre → preguntar el nombre ES TU PRIMERA PRIORIDAD\n"
-        "2. Si ya tienes el nombre → úsalo en CADA mensaje\n"
-        "3. NUNCA preguntes por datos que ya están en DATOS YA RECOPILADOS\n"
-        "4. Cuando tengas nombre+servicio+fecha+hora → intent='confirmar'\n"
-        "5. Sé cálida, usa el nombre del cliente, haz que se sienta bien atendido\n"
-        "6. REGLA CRÍTICA: Si en DATOS YA RECOPILADOS el servicio NO es null, significa que el cliente YA eligió su servicio. NUNCA vuelvas a preguntar el servicio ni sugerirlo. El intent debe ser 'agendar' y solo pedir los datos que faltan.\n\n"
+
+        "REGLAS ESTRICTAS — SÍGUELAS AL PIE DE LA LETRA:\n"
+        "1. Si NO tienes el nombre → preguntar el nombre ES TU PRIMERA PRIORIDAD.\n"
+        "2. Si ya tienes el nombre → úsalo en CADA mensaje.\n"
+        "3. NUNCA preguntes por datos que ya están en DATOS YA RECOPILADOS.\n"
+        "4. Cuando tengas nombre+servicio+fecha+hora → intent='confirmar'.\n"
+        "5. Sé cálida, usa el nombre del cliente, haz que se sienta bien atendido.\n"
+        "6. Si el servicio en DATOS YA RECOPILADOS NO es 'no seleccionado', significa que el cliente YA eligió su servicio. NUNCA vuelvas a preguntar por él.\n"
+        "7. NUNCA inventes ni sugieras un servicio específico. Si el cliente no ha elegido uno explícitamente, devuelve servicio=null.\n"
+        "8. Solo usa intent='agendar' cuando el cliente EXPLÍCITAMENTE diga que quiere agendar, reservar o hacer una cita.\n"
+        "9. Si el cliente solo saluda o da su nombre → intent='saludo'. No asumas que quiere agendar.\n"
+        "10. Si el cliente pregunta por servicios, precios o disponibilidad → intent='consultar'.\n"
+        "11. NUNCA uses ejemplos de servicios reales en tu respuesta como sugerencia.\n\n"
+
+        "FLUJO CORRECTO:\n"
+        "Paso 1 → Saludar y pedir nombre (si no lo tienes)\n"
+        "Paso 2 → Preguntar en qué puedes ayudar\n"
+        "Paso 3 → Si quiere agendar, mostrar servicios (el sistema lo hace automáticamente)\n"
+        "Paso 4 → Pedir fecha\n"
+        "Paso 5 → Pedir hora\n"
+        "Paso 6 → Confirmar todo\n\n"
+
         "EJEMPLO DE TONO:\n"
-        "'¡Hola! Soy Valentina 😊 ¿Con quién tengo el gusto?'\n"
-        "'¡Qué gusto, Federico! ¿En qué te puedo ayudar hoy?'\n"
-        "'Perfecto Federico, te agendamos Corte + Barba para mañana ✂️ ¿A qué hora te queda mejor?'\n\n"
+        "'¡Hola! Soy Valentina 😊 ¿Con quién tengo el gusto de hablar?'\n"
+        "'¡Qué gusto conocerte! ¿En qué te puedo ayudar hoy?'\n"
+        "'Con mucho gusto te ayudo a agendar tu cita 😊'\n\n"
+
         "Responde SOLO con un JSON con esta estructura:\n"
         "{\n"
         "  \"intent\": \"agendar|consultar|cancelar|saludo|confirmar|otro\",\n"
