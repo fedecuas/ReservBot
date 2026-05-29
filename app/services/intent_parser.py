@@ -10,9 +10,6 @@ settings = get_settings()
 
 
 async def parse_intent(phone: str, message: str, conversation_history: list[dict], appointment_data: dict = {}) -> dict:
-    """
-    Analiza el mensaje del usuario con la API de Anthropic para determinar el intent y extraer datos.
-    """
     fallback_response = {
         "intent": "otro",
         "servicio": None,
@@ -23,15 +20,15 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
     }
 
     if not settings.anthropic_api_key:
-        logger.error("Anthropic API key no está configurada en settings.")
+        logger.error("Anthropic API key no está configurada.")
         return fallback_response
 
-    # 1. Limpiar y estructurar el historial
+    # ── Limpiar historial ──────────────────────────────────────────
     raw_messages = []
     for msg in conversation_history:
         role = msg.get("role", "user")
         if role not in ("user", "assistant"):
-            role = "user" if role == "user" else "assistant"
+            role = "user"
         raw_messages.append({"role": role, "content": msg.get("content", "")})
 
     raw_messages.append({"role": "user", "content": message})
@@ -53,7 +50,7 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
     if not messages:
         return fallback_response
 
-    # 2. Configurar el prompt
+    # ── Configurar prompt ──────────────────────────────────────────
     business = get_business_by_phone(settings.phone_number_id)
     business_name = business.name if business else "Barbería El Estilo"
 
@@ -81,19 +78,19 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         "5. Sé cálida, usa el nombre del cliente, haz que se sienta bien atendido.\n"
         "6. Si el servicio en DATOS YA RECOPILADOS NO es 'no seleccionado', el cliente YA eligió. NUNCA vuelvas a preguntar por él.\n"
         "7. NUNCA inventes ni sugieras un servicio específico. Si el cliente no ha elegido uno, devuelve servicio=null.\n"
-        "8. Solo usa intent='agendar' cuando el cliente EXPLÍCIPAMENTE diga que quiere agendar, reservar o hacer una cita.\n"
+        "8. Solo usa intent='agendar' cuando el cliente EXPLÍCITAMENTE diga que quiere agendar, reservar o hacer una cita.\n"
         "9. Si el cliente solo saluda o da su nombre → intent='saludo'. No asumas que quiere agendar.\n"
         "10. Si el cliente pregunta por servicios, precios o disponibilidad → intent='consultar'.\n"
         "11. NUNCA uses ejemplos de servicios reales en tu respuesta como sugerencia.\n"
         "12. NUNCA menciones ni listes servicios específicos en tu respuesta. "
         "Si el cliente quiere agendar, responde ÚNICAMENTE con algo como: "
-        "'¡Con mucho gusto {nombre}! Aquí te muestro nuestros servicios disponibles 😊' "
+        "'¡Con mucho gusto! Aquí te muestro nuestros servicios disponibles 😊' "
         "El sistema se encargará de mostrar la lista automáticamente.\n\n"
 
         "FLUJO CORRECTO:\n"
         "Paso 1 → Saludar y pedir nombre (si no lo tienes)\n"
         "Paso 2 → Preguntar en qué puedes ayudar\n"
-        "Paso 3 → Si quiere agendar, responde con mensaje corto — el sistema muestra la lista de servicios\n"
+        "Paso 3 → Si quiere agendar, responde con mensaje corto — el sistema muestra la lista\n"
         "Paso 4 → Pedir fecha\n"
         "Paso 5 → Pedir hora\n"
         "Paso 6 → Confirmar todo\n\n"
@@ -103,7 +100,11 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         "'¡Qué gusto conocerte! ¿En qué te puedo ayudar hoy?'\n"
         "'¡Con mucho gusto! Aquí te muestro nuestros servicios disponibles 😊'\n\n"
 
-        "Responde SOLO con un JSON con esta estructura, sin markdown ni texto extra:\n"
+        "CRÍTICO: Tu respuesta debe ser ÚNICAMENTE el objeto JSON. "
+        "Sin saludos previos, sin explicaciones, sin markdown, sin bloques de código. "
+        "Solo el JSON puro comenzando con { y terminando con }.\n\n"
+
+        "Responde SOLO con este JSON:\n"
         "{\n"
         "  \"intent\": \"agendar|consultar|cancelar|saludo|confirmar|otro\",\n"
         "  \"servicio\": \"nombre del servicio o null\",\n"
@@ -111,47 +112,44 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         "  \"hora\": \"HH:MM o null\",\n"
         "  \"nombre\": \"nombre del cliente o null\",\n"
         "  \"respuesta\": \"mensaje amigable para el cliente en español\"\n"
-        "}\n\n"
-        "Si falta información para agendar, pídela en el campo 'respuesta'.\n"
-        "Usa el historial de conversación para mantener contexto."
+        "}\n"
     )
 
     try:
-        # Usar la API Key de settings
         client = AsyncAnthropic(api_key=settings.anthropic_api_key)
-        
-        logger.info(f"Enviando consulta a Anthropic para el número {phone}")
+        logger.info(f"Enviando consulta a Anthropic para {phone}")
+
         response = await client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1024,
             system=system_prompt,
             messages=messages
         )
-        
+
         response_text = response.content[0].text.strip()
-        
-        # 3. Intentar parsear el JSON retornado
-        # Eliminar posible envoltura de código markdown
+
+        # Limpiar markdown si viene
         if response_text.startswith("```json"):
             response_text = response_text[7:]
+        if response_text.startswith("```"):
+            response_text = response_text[3:]
         if response_text.endswith("```"):
             response_text = response_text[:-3]
         response_text = response_text.strip()
 
         parsed_json = json.loads(response_text)
-        
-        # Asegurar que todas las llaves requeridas existan en el dict retornado
+
         required_keys = ["intent", "servicio", "fecha", "hora", "nombre", "respuesta"]
         for key in required_keys:
             if key not in parsed_json:
                 parsed_json[key] = None
-        
+
         logger.info(f"Intent detectado: {parsed_json.get('intent')} para {phone}")
         return parsed_json
 
     except json.JSONDecodeError as jde:
-        logger.error(f"Error al decodificar JSON de la respuesta de Claude: {jde}. Respuesta original: {response_text}")
+        logger.error(f"Error JSON de Claude: {jde}. Respuesta: {response_text}")
         return fallback_response
     except Exception as e:
-        logger.exception(f"Excepción al llamar a la API de Anthropic: {e}")
+        logger.exception(f"Excepción Anthropic API: {e}")
         return fallback_response
