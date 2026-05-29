@@ -4,9 +4,10 @@ from fastapi import APIRouter, Request, HTTPException, Query
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.whatsapp import WebhookPayload
-from app.services.whatsapp_sender import send_text_message
+from app.services.whatsapp_sender import send_text_message, send_service_list
 from app.services.state_manager import state_manager
 from app.services.intent_parser import parse_intent
+from app.services.business_config import get_business_by_phone
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 logger = get_logger(__name__)
@@ -54,8 +55,21 @@ async def receive_message(request: Request):
 
     # ── Despachar mensajes ─────────────────────────────────────────
     for msg in payload.extract_messages():
-        if msg.type != "text":
+        if msg.type not in ("text", "interactive"):
             logger.debug(f"Mensaje no-texto ignorado (tipo: {msg.type})")
+            continue
+
+        if msg.type == "interactive":
+            service_id = msg.interactive_reply_id  # el id seleccionado
+            service_title = msg.interactive_reply_title
+            state = await state_manager.get_state(msg.from_number)
+            state.appointment_data["servicio"] = service_title
+            state.current_intent = "agendar"
+            await state_manager.save_state(state)
+            await send_text_message(
+                to=msg.from_number,
+                message=f"Perfecto, seleccionaste *{service_title}*. ¿Qué día te viene mejor?"
+            )
             continue
 
         phone = msg.from_number
@@ -89,11 +103,17 @@ async def receive_message(request: Request):
         # 4. Guardar estado actualizado
         await state_manager.save_state(state)
 
-        # 5. Responder con el campo 'respuesta' del JSON
-        await send_text_message(
-            to=phone,
-            message=bot_response
-        )
+        # 5. Responder con texto de Claude o Lista Interactiva
+        intent = response_json.get("intent")
+        servicio_ya_seleccionado = state.appointment_data.get("servicio")
+
+        if intent == "agendar" and not servicio_ya_seleccionado:
+            # Mostrar lista interactiva de servicios
+            business = get_business_by_phone(settings.phone_number_id)
+            await send_service_list(to=phone, services=business.services)
+        else:
+            # Responder con texto de Claude
+            await send_text_message(to=phone, message=bot_response)
 
     return {"status": "ok"}
 
