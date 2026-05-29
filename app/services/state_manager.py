@@ -28,13 +28,17 @@ class StateManager:
     Gestiona el estado de las conversaciones guardándolo en Redis o en memoria.
     """
     def __init__(self):
+        import os
         self.redis_client = None
         self._in_memory_db = {}  # Fallback: {phone: (ConversationState, datetime_saved)}
         
-        if settings.redis_url:
+        redis_url = settings.redis_url or os.getenv("REDIS_URL")
+        logger.info(f"StateManager iniciando — REDIS_URL: {'configurado' if redis_url else 'NO configurado'}")
+        
+        if redis_url:
             try:
                 # redis.from_url es perezoso y no lanza error de conexión de inmediato
-                self.redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+                self.redis_client = redis.from_url(redis_url, decode_responses=True)
                 logger.info("StateManager: Cliente de Redis configurado.")
             except Exception as e:
                 logger.warning(f"StateManager: Error configurando el cliente de Redis: {e}. Se usará memoria.")
