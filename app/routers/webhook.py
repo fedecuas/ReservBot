@@ -5,6 +5,8 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.whatsapp import WebhookPayload
 from app.services.whatsapp_sender import send_text_message
+from app.services.state_manager import state_manager
+from app.services.intent_parser import parse_intent
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 logger = get_logger(__name__)
@@ -56,12 +58,41 @@ async def receive_message(request: Request):
             logger.debug(f"Mensaje no-texto ignorado (tipo: {msg.type})")
             continue
 
-        logger.info(f"Mensaje recibido de {msg.from_number}: {msg.text_body!r}")
+        phone = msg.from_number
+        text = msg.text_body
+        logger.info(f"Mensaje recibido de {phone}: {text!r}")
 
-        # Responder automáticamente
+        # 1. Obtener/crear estado con state_manager.get_state(phone)
+        state = await state_manager.get_state(phone)
+
+        # Guardar historial previo antes de añadir el nuevo mensaje para evitar duplicaciones
+        history = list(state.messages)
+
+        # 2. Agregar mensaje del usuario al historial
+        state.messages.append({"role": "user", "content": text})
+
+        # 3. Llamar parse_intent con el historial
+        response_json = await parse_intent(phone, text, history)
+
+        # Agregar la respuesta del bot al historial
+        bot_response = response_json.get("respuesta") or "Hola"
+        state.messages.append({"role": "assistant", "content": bot_response})
+
+        # Actualizar datos del estado si se detectan
+        if response_json.get("intent"):
+            state.current_intent = response_json["intent"]
+        
+        for key in ["servicio", "fecha", "hora", "nombre"]:
+            if response_json.get(key) is not None:
+                state.appointment_data[key] = response_json[key]
+
+        # 4. Guardar estado actualizado
+        await state_manager.save_state(state)
+
+        # 5. Responder con el campo 'respuesta' del JSON
         await send_text_message(
-            to=msg.from_number,
-            message="Hola! Soy ReservBot 🤖 ¿En qué te puedo ayudar?"
+            to=phone,
+            message=bot_response
         )
 
     return {"status": "ok"}
