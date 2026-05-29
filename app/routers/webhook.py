@@ -86,7 +86,10 @@ async def receive_message(request: Request):
         state.messages.append({"role": "user", "content": text})
 
         # 3. Llamar parse_intent con el historial
-        response_json = await parse_intent(phone, text, history)
+        response_json = await parse_intent(
+            phone, text, history,
+            appointment_data=state.appointment_data
+        )
 
         # Agregar la respuesta del bot al historial
         bot_response = response_json.get("respuesta") or "Hola"

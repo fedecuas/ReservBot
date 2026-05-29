@@ -73,7 +73,8 @@ def test_webhook_post_returns_ok():
         mock_parse.assert_called_once_with(
             "5215512345678",
             "Hola quiero agendar un corte",
-            []
+            [],
+            appointment_data={}
         )
         
         mock_send.assert_called_once_with(

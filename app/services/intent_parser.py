@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
-async def parse_intent(phone: str, message: str, conversation_history: list[dict]) -> dict:
+async def parse_intent(phone: str, message: str, conversation_history: list[dict], appointment_data: dict = {}) -> dict:
     """
     Analiza el mensaje del usuario con la API de Anthropic para determinar el intent y extraer datos.
     """
@@ -56,10 +56,20 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
     if not messages:
         return fallback_response
 
-    # 2. Configurar la llamada a Claude
+    # 2. Configurar la llamada a Claude con contexto de datos ya recopilados
     system_prompt = (
         "Eres el asistente de reservas de un negocio. Tu trabajo es extraer \n"
         "información de citas desde mensajes en español de WhatsApp.\n\n"
+        "Datos ya recopilados de esta conversación:\n"
+        f"- Servicio: {appointment_data.get('servicio') or 'no seleccionado'}\n"
+        f"- Fecha: {appointment_data.get('fecha') or 'no proporcionada'}\n"
+        f"- Hora: {appointment_data.get('hora') or 'no proporcionada'}\n"
+        f"- Nombre: {appointment_data.get('nombre') or 'no proporcionado'}\n\n"
+        "REGLAS CRÍTICAS DE CONVERSACIÓN:\n"
+        "1. NO vuelvas a preguntar por datos que ya están recopilados. Solo pide la información que falta.\n"
+        "2. Lo PRIMERO que siempre debes preguntar (si no lo tienes en 'Datos ya recopilados' ni se menciona en el mensaje actual) es el NOMBRE del cliente. Antes de preguntar por servicio, fecha u hora — primero el nombre.\n"
+        "3. Una vez que tengas el nombre, úsalo en TODOS los mensajes siguientes para personalizar cada respuesta (ej. 'Perfecto Federico, ¿qué servicio deseas?' en lugar de '¿Qué servicio deseas?'). Nunca vuelvas a pedir el nombre si ya lo tienes.\n"
+        "4. Si ya tienes el nombre del cliente, úsalo para personalizar cada respuesta. Nunca vuelvas a pedir el nombre si ya lo tienes.\n\n"
         "Responde SOLO con un JSON con esta estructura:\n"
         "{\n"
         "  \"intent\": \"agendar|consultar|cancelar|saludo|otro\",\n"
