@@ -10,9 +10,15 @@ async def send_text_message(to: str, message: str) -> bool:
     """
     Envía un mensaje de texto usando la WhatsApp Cloud API v19.0.
     """
+    # Normalizar número de teléfono de México (quitar el '1' móvil si viene como '521' y tiene 13 dígitos)
+    if to.startswith("521") and len(to) == 13:
+        to = "52" + to[-10:]
+        logger.info(f"Número normalizado para envío: {to}")
+
     if not settings.phone_number_id or not settings.whatsapp_token:
         logger.error("WhatsApp credentials are not configured in settings.")
         return False
+
 
     url = f"https://graph.facebook.com/v19.0/{settings.phone_number_id}/messages"
     headers = {
