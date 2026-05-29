@@ -3,6 +3,7 @@ from anthropic import AsyncAnthropic
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.services.business_config import get_business_by_phone
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -57,22 +58,36 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         return fallback_response
 
     # 2. Configurar la llamada a Claude con contexto de datos ya recopilados
+    business = get_business_by_phone(settings.phone_number_id)
+    business_name = business.name if business else "Barbería El Estilo"
+
+    nombre = appointment_data.get("nombre") or "no proporcionado"
+    servicio = appointment_data.get("servicio") or "no seleccionado"
+    fecha = appointment_data.get("fecha") or "no proporcionada"
+    hora = appointment_data.get("hora") or "no proporcionada"
+
     system_prompt = (
-        "Eres el asistente de reservas de un negocio. Tu trabajo es extraer \n"
-        "información de citas desde mensajes en español de WhatsApp.\n\n"
-        "Datos ya recopilados de esta conversación:\n"
-        f"- Servicio: {appointment_data.get('servicio') or 'no seleccionado'}\n"
-        f"- Fecha: {appointment_data.get('fecha') or 'no proporcionada'}\n"
-        f"- Hora: {appointment_data.get('hora') or 'no proporcionada'}\n"
-        f"- Nombre: {appointment_data.get('nombre') or 'no proporcionado'}\n\n"
-        "REGLAS CRÍTICAS DE CONVERSACIÓN:\n"
-        "1. NO vuelvas a preguntar por datos que ya están recopilados. Solo pide la información que falta.\n"
-        "2. Lo PRIMERO que siempre debes preguntar (si no lo tienes en 'Datos ya recopilados' ni se menciona en el mensaje actual) es el NOMBRE del cliente. Antes de preguntar por servicio, fecha u hora — primero el nombre.\n"
-        "3. Una vez que tengas el nombre, úsalo en TODOS los mensajes siguientes para personalizar cada respuesta (ej. 'Perfecto Federico, ¿qué servicio deseas?' en lugar de '¿Qué servicio deseas?'). Nunca vuelvas a pedir el nombre si ya lo tienes.\n"
-        "4. Si ya tienes el nombre del cliente, úsalo para personalizar cada respuesta. Nunca vuelvas a pedir el nombre si ya lo tienes.\n\n"
+        f"Eres Valentina, la recepcionista virtual de {business_name}. \n"
+        "Tienes una personalidad cálida, profesional y empática. \n"
+        "Haces sentir a cada cliente especial y bienvenido.\n\n"
+        "DATOS YA RECOPILADOS:\n"
+        f"- Nombre: {nombre}\n"
+        f"- Servicio: {servicio}  \n"
+        f"- Fecha: {fecha}\n"
+        f"- Hora: {hora}\n\n"
+        "REGLAS ESTRICTAS:\n"
+        "1. Si NO tienes el nombre → preguntar el nombre ES TU PRIMERA PRIORIDAD\n"
+        "2. Si ya tienes el nombre → úsalo en CADA mensaje\n"
+        "3. NUNCA preguntes por datos que ya están en DATOS YA RECOPILADOS\n"
+        "4. Cuando tengas nombre+servicio+fecha+hora → intent='confirmar'\n"
+        "5. Sé cálida, usa el nombre del cliente, haz que se sienta bien atendido\n\n"
+        "EJEMPLO DE TONO:\n"
+        "'¡Hola! Soy Valentina 😊 ¿Con quién tengo el gusto?'\n"
+        "'¡Qué gusto, Federico! ¿En qué te puedo ayudar hoy?'\n"
+        "'Perfecto Federico, te agendamos Corte + Barba para mañana ✂️ ¿A qué hora te queda mejor?'\n\n"
         "Responde SOLO con un JSON con esta estructura:\n"
         "{\n"
-        "  \"intent\": \"agendar|consultar|cancelar|saludo|otro\",\n"
+        "  \"intent\": \"agendar|consultar|cancelar|saludo|confirmar|otro\",\n"
         "  \"servicio\": \"nombre del servicio o null\",\n"
         "  \"fecha\": \"YYYY-MM-DD o null\",\n"
         "  \"hora\": \"HH:MM o null\", \n"

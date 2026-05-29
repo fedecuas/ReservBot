@@ -1,0 +1,19 @@
+graph TD
+    User[Cliente WhatsApp] -->|Mensaje / Selección| Webhook[Meta Webhook]
+    Webhook -->|JSON Payload| FastAPI[FastAPI App]
+    FastAPI -->|Extract message| WebhookRouter[Webhook Router]
+    
+    WebhookRouter -->|get_state| StateManager[State Manager]
+    StateManager -->|ConversationState| WebhookRouter
+    
+    WebhookRouter -->|parse_intent| IntentParser[Intent Parser - Claude]
+    IntentParser -->|Extract intent & slots| WebhookRouter
+    
+    WebhookRouter -->|update_state| StateManager
+    
+    WebhookRouter -->|Decisión de flujo| FlowBranch{¿Intento Agendar y sin Servicio?}
+    FlowBranch -->|Sí| SendInteractive[WhatsApp Sender: send_service_list]
+    FlowBranch -->|No| SendText[WhatsApp Sender: send_text_message]
+    
+    SendInteractive -->|Menú de servicios| User
+    SendText -->|Mensaje de texto Valentina| User

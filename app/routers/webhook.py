@@ -108,14 +108,12 @@ async def receive_message(request: Request):
 
         # 5. Responder con texto de Claude o Lista Interactiva
         intent = response_json.get("intent")
-        servicio_ya_seleccionado = state.appointment_data.get("servicio")
 
-        if intent == "agendar" and not servicio_ya_seleccionado:
-            # Mostrar lista interactiva de servicios
+        if intent == "agendar" and not state.appointment_data.get("servicio"):
+            # Solo mostrar lista si NO hay servicio guardado en el ESTADO
             business = get_business_by_phone(settings.phone_number_id)
             await send_service_list(to=phone, services=business.services)
         else:
-            # Responder con texto de Claude
             await send_text_message(to=phone, message=bot_response)
 
     return {"status": "ok"}
