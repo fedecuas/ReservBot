@@ -13,7 +13,7 @@ def test_health():
 
 
 def test_webhook_verify_valid():
-    with patch("app.routers.webhook.settings") as mock_settings:
+    with patch("app.api.webhook.settings") as mock_settings:
         mock_settings.verify_token = "test_token"
         mock_settings.is_production = False
         res = client.get("/webhook", params={
@@ -26,7 +26,7 @@ def test_webhook_verify_valid():
 
 
 def test_webhook_verify_invalid_token():
-    with patch("app.routers.webhook.settings") as mock_settings:
+    with patch("app.api.webhook.settings") as mock_settings:
         mock_settings.verify_token = "test_token"
         mock_settings.is_production = False
         res = client.get("/webhook", params={
@@ -38,9 +38,9 @@ def test_webhook_verify_invalid_token():
 
 
 def test_webhook_post_returns_ok():
-    with patch("app.routers.webhook.settings") as mock_settings, \
-         patch("app.routers.webhook.send_text_message") as mock_send, \
-         patch("app.routers.webhook.parse_intent") as mock_parse:
+    with patch("app.api.webhook.settings") as mock_settings, \
+         patch("app.api.webhook.send_text_message") as mock_send, \
+         patch("app.api.webhook.parse_intent") as mock_parse:
         
         mock_settings.is_production = False
         mock_parse.return_value = {
@@ -86,9 +86,9 @@ def test_webhook_post_returns_ok():
 
 
 def test_webhook_interactive_reply_returns_ok():
-    with patch("app.routers.webhook.settings") as mock_settings, \
-         patch("app.routers.webhook.send_text_message") as mock_send, \
-         patch("app.routers.webhook.state_manager") as mock_state_mgr:
+    with patch("app.api.webhook.settings") as mock_settings, \
+         patch("app.api.webhook.send_text_message") as mock_send, \
+         patch("app.api.webhook.state_manager") as mock_state_mgr:
          
         mock_settings.is_production = False
         
@@ -137,10 +137,10 @@ def test_webhook_interactive_reply_returns_ok():
 
 
 def test_webhook_post_agendar_sends_service_list():
-    with patch("app.routers.webhook.settings") as mock_settings, \
-         patch("app.routers.webhook.send_service_list") as mock_send_list, \
-         patch("app.routers.webhook.parse_intent") as mock_parse, \
-         patch("app.routers.webhook.state_manager") as mock_state_mgr:
+    with patch("app.api.webhook.settings") as mock_settings, \
+         patch("app.api.webhook.send_service_list") as mock_send_list, \
+         patch("app.api.webhook.parse_intent") as mock_parse, \
+         patch("app.api.webhook.state_manager") as mock_state_mgr:
          
         mock_settings.is_production = False
         mock_settings.phone_number_id = "1147614285101997"

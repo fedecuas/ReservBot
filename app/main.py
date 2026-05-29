@@ -1,20 +1,18 @@
-from fastapi import FastAPI
 from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from app.core.logging import setup_logging, get_logger
 from app.core.config import get_settings
-from app.routers import webhook
+from app.api import webhook
 
-logger = get_logger(__name__)
 settings = get_settings()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    logger = get_logger(__name__)
     logger.info(f"ReservBot arrancando — entorno: {settings.app_env}")
     yield
     logger.info("ReservBot apagándose")
-
 
 app = FastAPI(
     title="ReservBot",
@@ -24,7 +22,6 @@ app = FastAPI(
 )
 
 app.include_router(webhook.router)
-
 
 @app.get("/health")
 async def health():
