@@ -42,6 +42,8 @@ async def create_calendar_event(appointment_data: dict) -> str | None:
         start_dt = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M")
         end_dt = start_dt + timedelta(hours=1)
 
+        logger.info(f"Intentando crear evento en calendarId: {settings.google_calendar_id}")
+        logger.info(f"appointment_data recibido: {appointment_data}")
         creds = _get_credentials()
         service = build("calendar", "v3", credentials=creds)
 
@@ -63,6 +65,7 @@ async def create_calendar_event(appointment_data: dict) -> str | None:
             body=event
         ).execute()
 
+        logger.info(f"Resultado completo de Google: {result}")
         event_link = result.get("htmlLink")
         logger.info(f"Evento creado en Calendar: {event_link}")
         return event_link
