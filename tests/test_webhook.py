@@ -189,4 +189,70 @@ def test_webhook_post_agendar_sends_service_list():
     assert res.status_code == 200
 
 
+def test_webhook_post_confirmar_creates_calendar_event():
+    with patch("app.api.webhook.settings") as mock_settings, \
+         patch("app.api.webhook.send_text_message") as mock_send, \
+         patch("app.api.webhook.parse_intent") as mock_parse, \
+         patch("app.api.webhook.state_manager") as mock_state_mgr, \
+         patch("app.api.webhook.create_calendar_event") as mock_create_event:
+         
+        mock_settings.is_production = False
+        
+        # Intent es confirmar con todos los datos completos
+        mock_parse.return_value = {
+            "intent": "confirmar",
+            "servicio": "Corte de cabello",
+            "fecha": "2026-06-01",
+            "hora": "15:00",
+            "nombre": "Juan",
+            "respuesta": "¡Perfecto Juan! Tu cita para Corte de cabello el 2026-06-01 a las 15:00 ha sido agendada."
+        }
+        
+        # Mock State
+        mock_state = MagicMock()
+        mock_state.messages = []
+        mock_state.appointment_data = {
+            "nombre": "Juan",
+            "servicio": "Corte de cabello",
+            "fecha": "2026-06-01",
+            "hora": "15:00"
+        }
+        mock_state_mgr.get_state = AsyncMock(return_value=mock_state)
+        mock_state_mgr.save_state = AsyncMock()
+        
+        payload = {
+            "object": "whatsapp_business_account",
+            "entry": [{
+                "changes": [{
+                    "value": {
+                        "messages": [{
+                            "id": "msg_004",
+                            "from": "5215512345678",
+                            "timestamp": "1716800000",
+                            "type": "text",
+                            "text": {"body": "sí, está bien"}
+                        }]
+                    }
+                }]
+            }]
+        }
+        res = client.post("/webhook", json=payload)
+        
+        # Verificar que se llamó a create_calendar_event
+        mock_create_event.assert_called_once_with({
+            "nombre": "Juan",
+            "servicio": "Corte de cabello",
+            "fecha": "2026-06-01",
+            "hora": "15:00"
+        })
+        
+        mock_send.assert_called_once_with(
+            to="5215512345678",
+            message="¡Perfecto Juan! Tu cita para Corte de cabello el 2026-06-01 a las 15:00 ha sido agendada."
+        )
+        
+    assert res.status_code == 200
+
+
+
 

@@ -9,6 +9,7 @@ from app.services.whatsapp_sender import send_text_message, send_service_list
 from app.services.state_manager import state_manager
 from app.services.intent_parser import parse_intent
 from app.services.business_config import get_business_by_phone
+from app.services.calendar_service import create_calendar_event
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 logger = get_logger(__name__)
@@ -98,6 +99,12 @@ async def receive_message(request: Request):
                 state.appointment_data[key] = response_json[key]
 
         await state_manager.save_state(state)
+
+        # ── Google Calendar ────────────────────────────────────────
+        if response_json.get("intent") == "confirmar":
+            appt = state.appointment_data
+            if all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
+                await create_calendar_event(appt)
 
         # ── Debug logs ─────────────────────────────────────────────
         servicio_guardado = state.appointment_data.get("servicio")

@@ -15,5 +15,9 @@ graph TD
     FlowBranch -->|Sí| SendInteractive[WhatsApp Sender: send_service_list]
     FlowBranch -->|No| SendText[WhatsApp Sender: send_text_message]
     
+    WebhookRouter -->|intent == confirmar| GoogleCalendar[Calendar Service: create_calendar_event]
+    GoogleCalendar -->|Crear Evento| GoogleCalendarAPI[Google Calendar API]
+    
     SendInteractive -->|Menú de servicios| User
     SendText -->|Mensaje de texto Valentina| User
+
