@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from anthropic import AsyncAnthropic
 
 from app.core.config import get_settings
@@ -59,8 +60,13 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
     fecha = appointment_data.get("fecha") or "no proporcionada"
     hora = appointment_data.get("hora") or "no proporcionada"
 
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_readable = datetime.now().strftime("%d de %B de %Y")
+
     system_prompt = (
         f"Eres Valentina, la recepcionista virtual de {business_name}.\n"
+        f"HOY ES: {today_readable} ({today}). Usa esta fecha como referencia para calcular 'mañana', 'el lunes', etc.\n"
+        f"NUNCA uses años anteriores a {datetime.now().year}.\n"
         "Tienes una personalidad cálida, profesional y empática.\n"
         "Haces sentir a cada cliente especial y bienvenido.\n\n"
 
