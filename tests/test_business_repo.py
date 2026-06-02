@@ -46,7 +46,8 @@ async def test_get_business_by_phone_cache_miss_db_hit():
     mock_db_business.phone_number_id = "5556789"
 
     mock_service = MagicMock(spec=Service)
-    mock_service.id = "barba"
+    mock_service.id = 123
+    mock_service.list_item_id = "barba"
     mock_service.name = "Arreglo de barba"
     mock_service.duration_min = 20
     mock_service.price = 80.0

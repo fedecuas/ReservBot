@@ -1,27 +1,23 @@
+import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-from app.core.config import get_settings
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./reservbot.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-settings = get_settings()
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+)
 
-# Fallback to local SQLite database if no database URL is set
-db_url = settings.database_url or "sqlite:///./reservbot.db"
-
-# Handle SQLite specifically (needs check_same_thread disablement)
-connect_args = {}
-if db_url.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
-
-engine = create_engine(db_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
+class Base(DeclarativeBase):
+    pass
 
 def get_db():
-    """
-    Dependency helper to provide a database session.
-    """
     db = SessionLocal()
     try:
         yield db

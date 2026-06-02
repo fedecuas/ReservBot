@@ -48,10 +48,10 @@ class BusinessRepository:
                 services_list = []
                 for s in db_business.services:
                     services_list.append({
-                        "id": s.id,
+                        "id": s.list_item_id or str(s.id),
                         "name": s.name,
                         "duration_min": s.duration_min,
-                        "price": s.price
+                        "price": float(s.price) if s.price is not None else 0.0
                     })
 
                 # Mapear días de la semana (Lunes=0, Domingo=6)

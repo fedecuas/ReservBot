@@ -25,6 +25,22 @@ class WebhookPayload(BaseModel):
     object: str
     entry: list
 
+    def get_phone_number_id(self) -> str:
+        """
+        Extrae el phone_number_id del primer change del payload.
+        Es el Tenant ID — identifica qué negocio recibió el mensaje.
+        """
+        try:
+            return (
+                self.entry[0]
+                    .get("changes", [{}])[0]
+                    .get("value", {})
+                    .get("metadata", {})
+                    .get("phone_number_id", "")
+            )
+        except (IndexError, AttributeError):
+            return ""
+
     def extract_messages(self) -> list[IncomingMessage]:
         messages = []
         for entry in self.entry:

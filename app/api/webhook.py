@@ -43,6 +43,12 @@ async def receive_message(request: Request):
         logger.error(f"Error parseando payload: {e}")
         return {"status": "ok"}
 
+    # ── Extraer phone_number_id del payload (Tenant ID) ────────────
+    phone_number_id = payload.get_phone_number_id()
+    if not phone_number_id:
+        phone_number_id = settings.phone_number_id
+    logger.debug(f"phone_number_id (tenant): {phone_number_id}")
+
     for msg in payload.extract_messages():
         if msg.type not in ("text", "interactive"):
             logger.debug(f"Mensaje no-texto ignorado (tipo: {msg.type})")
@@ -130,7 +136,7 @@ async def receive_message(request: Request):
             saludo = f"¡Perfecto {nombre}! Te muestro nuestros servicios 😊" if nombre else "¡Con gusto! Te muestro nuestros servicios 😊"
             await send_text_message(to=phone, message=saludo)
             await asyncio.sleep(0.5)
-            business = await get_business_by_phone(settings.phone_number_id)
+            business = await get_business_by_phone(phone_number_id)
             await send_service_list(to=phone, services=business.services)
             return {"status": "ok"}
         else:
