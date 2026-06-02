@@ -15,6 +15,7 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         "intent": "otro",
         "servicio": None,
         "fecha": None,
+        "fechas_candidatas": None,
         "hora": None,
         "nombre": None,
         "respuesta": "Lo siento, por el momento tengo problemas para procesar tu mensaje. ¿Podrías escribirlo de nuevo?"
@@ -59,9 +60,24 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
     servicio = appointment_data.get("servicio") or "no seleccionado"
     fecha = appointment_data.get("fecha") or "no proporcionada"
     hora = appointment_data.get("hora") or "no proporcionada"
+    fechas_candidatas = appointment_data.get("fechas_candidatas") or []
 
     today = datetime.now().strftime("%Y-%m-%d")
     today_readable = datetime.now().strftime("%d de %B de %Y")
+
+    # Contexto de fechas candidatas para el prompt
+    candidatas_ctx = ""
+    if fechas_candidatas:
+        days_es = ["lunes","martes","miércoles","jueves","viernes","sábado","domingo"]
+        months_es = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
+        labels = []
+        for fc in fechas_candidatas:
+            try:
+                d = datetime.strptime(fc, "%Y-%m-%d")
+                labels.append(f"{days_es[d.weekday()]} {d.day} de {months_es[d.month-1]} ({fc})")
+            except:
+                labels.append(fc)
+        candidatas_ctx = f"- Fechas candidatas (cliente mencionó ambas): {', '.join(labels)}\n"
 
     system_prompt = (
         f"Eres Valentina, la recepcionista virtual de {business_name}.\n"
@@ -74,7 +90,8 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         f"- Nombre: {nombre}\n"
         f"- Servicio: {servicio}\n"
         f"- Fecha: {fecha}\n"
-        f"- Hora: {hora}\n\n"
+        f"- Hora: {hora}\n"
+        f"{candidatas_ctx}\n"
 
         "REGLAS ESTRICTAS — SÍGUELAS AL PIE DE LA LETRA:\n"
         "1. Si NO tienes el nombre → preguntar el nombre ES TU PRIMERA PRIORIDAD.\n"
@@ -93,6 +110,18 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         "'¡Con mucho gusto! Aquí te muestro nuestros servicios disponibles 😊' "
         "El sistema se encargará de mostrar la lista automáticamente.\n\n"
 
+        "MANEJO DE FECHAS MÚLTIPLES:\n"
+        "13. Si el cliente menciona DOS días alternativos (ej: 'martes o miércoles', 'el lunes o el martes', "
+        "'¿tienes el jueves o viernes?') → guarda AMBAS fechas calculadas en 'fechas_candidatas' "
+        "como lista ['YYYY-MM-DD', 'YYYY-MM-DD'] y pon fecha=null. "
+        "Responde algo como: '¡Claro! Déjame mostrarte los horarios disponibles para ambos días 😊'\n"
+        "14. Si el cliente pregunta '¿qué horarios tienes?' o '¿tienes disponibilidad?' y ya hay "
+        "fechas_candidatas en DATOS YA RECOPILADOS → responde con: "
+        "'¡Claro! Aquí te muestro los horarios disponibles para ambos días 😊' "
+        "El sistema mostrará automáticamente los slots. intent='consultar'.\n"
+        "15. Si hay fechas_candidatas y el cliente confirma UN día específico → "
+        "mueve esa fecha a 'fecha' (YYYY-MM-DD), pon fechas_candidatas=null.\n\n"
+
         "FLUJO CORRECTO:\n"
         "Paso 1 → Saludar y pedir nombre (si no lo tienes)\n"
         "Paso 2 → Preguntar en qué puedes ayudar\n"
@@ -104,7 +133,8 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         "EJEMPLO DE TONO:\n"
         "'¡Hola! Soy Valentina 😊 ¿Con quién tengo el gusto de hablar?'\n"
         "'¡Qué gusto conocerte! ¿En qué te puedo ayudar hoy?'\n"
-        "'¡Con mucho gusto! Aquí te muestro nuestros servicios disponibles 😊'\n\n"
+        "'¡Con mucho gusto! Aquí te muestro nuestros servicios disponibles 😊'\n"
+        "'¡Claro! Déjame mostrarte los horarios disponibles para ambos días 😊'\n\n"
 
         "CRÍTICO: Tu respuesta debe ser ÚNICAMENTE el objeto JSON. "
         "Sin saludos previos, sin explicaciones, sin markdown, sin bloques de código. "
@@ -115,6 +145,7 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         "  \"intent\": \"agendar|consultar|cancelar|saludo|confirmar|otro\",\n"
         "  \"servicio\": \"nombre del servicio o null\",\n"
         "  \"fecha\": \"YYYY-MM-DD o null\",\n"
+        "  \"fechas_candidatas\": [\"YYYY-MM-DD\", \"YYYY-MM-DD\"] o null,\n"
         "  \"hora\": \"HH:MM o null\",\n"
         "  \"nombre\": \"nombre del cliente o null\",\n"
         "  \"respuesta\": \"mensaje amigable para el cliente en español\"\n"
@@ -145,7 +176,7 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
 
         parsed_json = json.loads(response_text)
 
-        required_keys = ["intent", "servicio", "fecha", "hora", "nombre", "respuesta"]
+        required_keys = ["intent", "servicio", "fecha", "fechas_candidatas", "hora", "nombre", "respuesta"]
         for key in required_keys:
             if key not in parsed_json:
                 parsed_json[key] = None
