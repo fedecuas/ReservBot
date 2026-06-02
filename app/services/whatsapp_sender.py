@@ -187,13 +187,27 @@ async def send_time_slots_list(to: str, slots: list[str], date_str: str, service
     except:
         date_readable = date_str
 
-    # Máximo 10 slots (límite de WhatsApp Interactive List)
-    slots_to_show = slots[:10]
+    # Agrupar slots por turno
+    morning = [s for s in slots if int(s.split(":")[0]) < 12]    # 09:00 - 11:30
+    afternoon = [s for s in slots if 12 <= int(s.split(":")[0]) < 16]  # 12:00 - 15:30
+    evening = [s for s in slots if int(s.split(":")[0]) >= 16]   # 16:00 - 18:30
 
-    rows = [
-        {"id": f"hora_{slot.replace(':', '')}", "title": slot}
-        for slot in slots_to_show
-    ]
+    sections = []
+    if morning:
+        sections.append({
+            "title": "🌅 Mañana",
+            "rows": [{"id": f"hora_{s.replace(':', '')}", "title": s} for s in morning]
+        })
+    if afternoon:
+        sections.append({
+            "title": "☀️ Tarde",
+            "rows": [{"id": f"hora_{s.replace(':', '')}", "title": s} for s in afternoon]
+        })
+    if evening:
+        sections.append({
+            "title": "🌆 Noche",
+            "rows": [{"id": f"hora_{s.replace(':', '')}", "title": s} for s in evening]
+        })
 
     payload = {
         "messaging_product": "whatsapp",
@@ -206,12 +220,7 @@ async def send_time_slots_list(to: str, slots: list[str], date_str: str, service
             "footer": {"text": "Selecciona un horario 👇"},
             "action": {
                 "button": "Ver horarios",
-                "sections": [
-                    {
-                        "title": "Horarios libres",
-                        "rows": rows
-                    }
-                ]
+                "sections": sections
             }
         }
     }
