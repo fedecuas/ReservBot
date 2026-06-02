@@ -18,7 +18,7 @@ def seed():
         business = Business(
             phone_number_id=PHONE_NUMBER_ID,
             phone_number="525659155222",
-            name="Barberia El Estilo",
+            name="Barbería El Estilo",
             category="barbershop",
             timezone="America/Mexico_City",
             bot_name="Valentina",
@@ -49,10 +49,10 @@ def seed():
             db.add(h)
 
         db.commit()
-        print(f"Negocio creado: {business.name} (id={business.id})")
+        print(f"✅ Negocio creado: {business.name} (id={business.id})")
     except Exception as e:
         db.rollback()
-        print(f"Error: {e}")
+        print(f"❌ Error: {e}")
         raise
     finally:
         db.close()
