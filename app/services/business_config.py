@@ -46,15 +46,11 @@ _businesses_db: dict[str, BusinessConfig] = {
 }
 
 
-def get_business_by_phone(phone_number_id: str) -> BusinessConfig:
+async def get_business_by_phone(phone_number_id: str) -> BusinessConfig:
     """
     Retorna la configuración del negocio asociado al phone_number_id de Meta.
-    Si no existe o no se encuentra, retorna el negocio demo como fallback.
+    Usa el repositorio para buscar en caché o base de datos.
     """
-    business = _businesses_db.get(phone_number_id)
-    if business:
-        logger.info(f"Negocio encontrado para phone_number_id '{phone_number_id}': {business.name}")
-        return business
-    
-    logger.warning(f"No se encontró negocio para phone_number_id '{phone_number_id}'. Usando demo fallback.")
-    return DEMO_BUSINESS
+    from app.services.business_repo import business_repository
+    return await business_repository.get_business_by_phone(phone_number_id)
+

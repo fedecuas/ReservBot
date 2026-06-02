@@ -11,4 +11,5 @@ dist/
 build/
 .DS_Store
 Google Console/
-
+*.db
+*.sqlite

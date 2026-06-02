@@ -52,7 +52,7 @@ async def parse_intent(phone: str, message: str, conversation_history: list[dict
         return fallback_response
 
     # ── Configurar prompt ──────────────────────────────────────────
-    business = get_business_by_phone(settings.phone_number_id)
+    business = await get_business_by_phone(settings.phone_number_id)
     business_name = business.name if business else "Barbería El Estilo"
 
     nombre = appointment_data.get("nombre") or "no proporcionado"

@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # Redis (opcional — si está vacío usa SQLite)
     redis_url: str = ""
 
+    # Database
+    database_url: str = ""
+
     # App
     app_env: str = "development"
     log_level: str = "INFO"

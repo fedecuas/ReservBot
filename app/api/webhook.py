@@ -130,7 +130,7 @@ async def receive_message(request: Request):
             saludo = f"¡Perfecto {nombre}! Te muestro nuestros servicios 😊" if nombre else "¡Con gusto! Te muestro nuestros servicios 😊"
             await send_text_message(to=phone, message=saludo)
             await asyncio.sleep(0.5)
-            business = get_business_by_phone(settings.phone_number_id)
+            business = await get_business_by_phone(settings.phone_number_id)
             await send_service_list(to=phone, services=business.services)
             return {"status": "ok"}
         else:
