@@ -68,6 +68,18 @@ async def receive_message(request: Request):
             logger.debug(f"Mensaje no-texto ignorado (tipo: {msg.type})")
             continue
 
+        # Deduplicación — Meta reenvía el mismo webhook varias veces
+        msg_dedup_key = f"msg_processed:{msg.id}"
+        try:
+            already_processed = await state_manager.redis.set(
+                msg_dedup_key, "1", nx=True, ex=60
+            )
+            if already_processed is None:
+                logger.info(f"Mensaje duplicado ignorado: {msg.id}")
+                continue
+        except Exception as e:
+            logger.warning(f"Redis dedup falló, procesando igual: {e}")
+
         # ── Respuesta interactiva ────────────────────────────────────────────
         if msg.type == "interactive":
             logger.info(
