@@ -207,6 +207,7 @@ async def receive_message(request: Request):
         logger.info(f"servicio_guardado: {servicio_guardado}")
         logger.info(f"intent: {response_json.get('intent')}")
         logger.info(f"fecha: {response_json.get('fecha')} | fechas_candidatas: {fechas_candidatas}")
+        logger.info(f"appointment_data completo: {state.appointment_data}")
 
         # ── Lógica de respuesta ──────────────────────────────────────────────
         intent         = response_json.get("intent")
