@@ -11,13 +11,21 @@ graph TD
     
     WebhookRouter -->|update_state| StateManager
     
-    WebhookRouter -->|Decisión de flujo| FlowBranch{¿Intento Agendar y sin Servicio?}
-    FlowBranch -->|Sí| SendInteractive[WhatsApp Sender: send_service_list]
-    FlowBranch -->|No| SendText[WhatsApp Sender: send_text_message]
+    WebhookRouter -->|Decisión de flujo| FlowBranch{¿Qué responder?}
+    FlowBranch -->|Servicios| SendServices[WhatsApp Sender: send_service_list]
+    FlowBranch -->|Horarios libres| CheckCalendar[Calendar Service: check_availability]
+    FlowBranch -->|Texto Simple| SendText[WhatsApp Sender: send_text_message]
     
-    WebhookRouter -->|intent == confirmar| GoogleCalendar[Calendar Service: create_calendar_event]
-    GoogleCalendar -->|Crear Evento| GoogleCalendarAPI[Google Calendar API]
+    CheckCalendar -->|Buscar libres| GoogleCalendarAPI[Google Calendar API]
+    GoogleCalendarAPI -->|Slots libres| SendSlots[WhatsApp Sender: send_time_slots_list]
     
-    SendInteractive -->|Menú de servicios| User
-    SendText -->|Mensaje de texto Valentina| User
+    User -->|Selecciona hora_xxx| InteractiveHour[Handler Selección Hora]
+    InteractiveHour -->|Establece hora en estado| WebhookRouter
+    
+    WebhookRouter -->|Confirmar cita completa| GoogleCalendar[Calendar Service: create_calendar_event]
+    GoogleCalendar -->|Crear Evento| GoogleCalendarAPI
+    
+    SendServices -->|Menú interactivo de servicios| User
+    SendSlots -->|Lista interactiva de horarios| User
+    SendText -->|Respuesta de Valentina| User
 
