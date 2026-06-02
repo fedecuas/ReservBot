@@ -173,41 +173,48 @@ async def _send_payload(payload: dict) -> bool:
         return False
 
 
-async def send_time_slots_list(to: str, slots: list[str], date_str: str, service_name: str, id_prefix: str = "hora_") -> None:
+async def send_time_slots_list(
+    to: str,
+    slots: list[str],
+    date_str: str,
+    service_name: str,
+    id_prefix: str = "hora_",          # ← NUEVO PARÁMETRO
+) -> None:
     """
-    Envía lista interactiva de horarios disponibles.
-    Máximo 10 slots por lista (límite WhatsApp).
+    Envía una lista interactiva de WhatsApp con los slots disponibles.
+
+    id_prefix controla el formato del ID de cada opción:
+      - Flujo normal (día único):  id_prefix="hora_"
+          → id resultante: "hora_09:00"
+      - Flujo multi-día:           id_prefix="hora_2025-06-03_"
+          → id resultante: "hora_2025-06-03_09:00"
+
+    El webhook lee el id para saber si trae fecha embebida:
+      parts = id.split("_")
+      len == 2  → hora_{HH:MM}         (fecha ya guardada en state)
+      len == 3  → hora_{YYYY-MM-DD}_{HH:MM}  (fecha del slot)
     """
-    from datetime import datetime
+    settings = get_settings()
+
+    # Construir filas de la lista (máx 10 por sección en WhatsApp)
+    rows = []
+    for slot in slots[:10]:
+        rows.append({
+            "id":          f"{id_prefix}{slot}",   # ← usa el prefijo
+            "title":       slot,
+            "description": service_name,
+        })
+
+    # Formatear fecha legible para el header
     try:
-        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-        days_es = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
-        months_es = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
-        date_readable = f"{days_es[date_obj.weekday()]} {date_obj.day} de {months_es[date_obj.month-1]}"
-    except:
-        date_readable = date_str
-
-    # Agrupar slots por turno
-    morning = [s for s in slots if int(s.split(":")[0]) < 12]    # 09:00 - 11:30
-    afternoon = [s for s in slots if 12 <= int(s.split(":")[0]) < 16]  # 12:00 - 15:30
-    evening = [s for s in slots if int(s.split(":")[0]) >= 16]   # 16:00 - 18:30
-
-    sections = []
-    if morning:
-        sections.append({
-            "title": "🌅 Mañana",
-            "rows": [{"id": f"{id_prefix}{s.replace(':', '')}", "title": s} for s in morning]
-        })
-    if afternoon:
-        sections.append({
-            "title": "☀️ Tarde",
-            "rows": [{"id": f"{id_prefix}{s.replace(':', '')}", "title": s} for s in afternoon]
-        })
-    if evening:
-        sections.append({
-            "title": "🌆 Noche",
-            "rows": [{"id": f"{id_prefix}{s.replace(':', '')}", "title": s} for s in evening]
-        })
+        from datetime import datetime
+        days_es   = ["lunes","martes","miércoles","jueves","viernes","sábado","domingo"]
+        months_es = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto",
+                     "septiembre","octubre","noviembre","diciembre"]
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        fecha_label = f"{days_es[d.weekday()]} {d.day} de {months_es[d.month - 1]}"
+    except Exception:
+        fecha_label = date_str
 
     payload = {
         "messaging_product": "whatsapp",
@@ -215,15 +222,35 @@ async def send_time_slots_list(to: str, slots: list[str], date_str: str, service
         "type": "interactive",
         "interactive": {
             "type": "list",
-            "header": {"type": "text", "text": f"📅 {date_readable}"},
-            "body": {"text": f"Horarios disponibles para *{service_name}*. ¿Cuál te queda mejor?"},
-            "footer": {"text": "Selecciona un horario 👇"},
+            "header": {
+                "type": "text",
+                "text": f"Horarios — {fecha_label}",
+            },
+            "body": {
+                "text": f"Selecciona el horario que prefieras para *{service_name}* 👇",
+            },
+            "footer": {
+                "text": "Elige una hora disponible",
+            },
             "action": {
                 "button": "Ver horarios",
-                "sections": sections
-            }
-        }
+                "sections": [{
+                    "title": "Horas disponibles",
+                    "rows": rows,
+                }],
+            },
+        },
     }
-    await _send_payload(payload)
+
+    # ── Enviar via Meta Cloud API ──────────────────────────────────
+    import httpx
+    url = f"https://graph.facebook.com/v18.0/{settings.phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {settings.whatsapp_token}",
+        "Content-Type":  "application/json",
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(url, json=payload, headers=headers)
+        resp.raise_for_status()
 
 
