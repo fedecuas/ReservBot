@@ -2,6 +2,7 @@ import hmac
 import hashlib
 import asyncio
 from fastapi import APIRouter, Request, HTTPException, Query
+from datetime import datetime
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models.whatsapp import WebhookPayload
@@ -14,6 +15,19 @@ from app.services.calendar_service import create_calendar_event, check_availabil
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 logger = get_logger(__name__)
 settings = get_settings()
+
+DAYS_ES   = ["lunes","martes","miércoles","jueves","viernes","sábado","domingo"]
+MONTHS_ES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto",
+             "septiembre","octubre","noviembre","diciembre"]
+
+
+def _fecha_readable(date_str: str) -> str:
+    """Convierte 'YYYY-MM-DD' → 'martes 3 de junio'. Devuelve el string original si falla."""
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        return f"{DAYS_ES[d.weekday()]} {d.day} de {MONTHS_ES[d.month - 1]}"
+    except Exception:
+        return date_str
 
 
 @router.get("")
@@ -43,7 +57,7 @@ async def receive_message(request: Request):
         logger.error(f"Error parseando payload: {e}")
         return {"status": "ok"}
 
-    # ── Extraer phone_number_id del payload (Tenant ID) ────────────
+    # ── Extraer phone_number_id del payload (Tenant ID) ─────────────────────
     phone_number_id = payload.get_phone_number_id()
     if not phone_number_id:
         phone_number_id = settings.phone_number_id
@@ -54,53 +68,65 @@ async def receive_message(request: Request):
             logger.debug(f"Mensaje no-texto ignorado (tipo: {msg.type})")
             continue
 
-        # ── Manejo de respuesta interactiva (selección de servicio) ──
+        # ── Respuesta interactiva ────────────────────────────────────────────
         if msg.type == "interactive":
-            logger.info(f"Respuesta interactiva recibida: id={msg.interactive_reply_id}, title={msg.interactive_reply_title}")
-            
+            logger.info(
+                f"Respuesta interactiva recibida: "
+                f"id={msg.interactive_reply_id}, title={msg.interactive_reply_title}"
+            )
+
             if msg.interactive_reply_id.startswith("hora_"):
-                # Usuario seleccionó un horario de la lista
-                hora_seleccionada = msg.interactive_reply_title  # "15:00"
+                # ── Slot de horario seleccionado ─────────────────────────────
+                # El id tiene el formato:  hora_{HH:MM}  o  hora_{YYYY-MM-DD}_{HH:MM}
+                # para soportar el flujo multi-día.
+                parts = msg.interactive_reply_id.split("_")
+
+                if len(parts) == 3:
+                    # hora_{YYYY-MM-DD}_{HH:MM}  → slot de un día candidato
+                    fecha_del_slot = parts[1]
+                    hora_del_slot  = parts[2]
+                    if ":" not in hora_del_slot and len(hora_del_slot) == 4:
+                        hora_del_slot = f"{hora_del_slot[:2]}:{hora_del_slot[2:]}"
+                else:
+                    # hora_{HH:MM}  → slot del flujo normal (fecha ya confirmada)
+                    fecha_del_slot = None
+                    hora_del_slot  = msg.interactive_reply_title
+
                 state = await state_manager.get_state(msg.from_number)
-                state.appointment_data["hora"] = hora_seleccionada
+
+                # Si el slot trae fecha propia (multi-día), la confirmamos ahora
+                if fecha_del_slot:
+                    state.appointment_data["fecha"] = fecha_del_slot
+                    state.appointment_data.pop("fechas_candidatas", None)
+
+                state.appointment_data["hora"] = hora_del_slot
                 state.current_intent = "confirmar"
                 await state_manager.save_state(state)
-                
-                appt = state.appointment_data
-                nombre = appt.get("nombre", "")
+
+                appt  = state.appointment_data
+                nombre   = appt.get("nombre", "")
                 servicio = appt.get("servicio", "")
-                fecha = appt.get("fecha", "")
-                
-                # Formatear fecha legible
-                try:
-                    from datetime import datetime
-                    date_obj = datetime.strptime(fecha, "%Y-%m-%d")
-                    days_es = ["lunes","martes","miércoles","jueves","viernes","sábado","domingo"]
-                    months_es = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
-                    fecha_readable = f"{days_es[date_obj.weekday()]} {date_obj.day} de {months_es[date_obj.month-1]}"
-                except:
-                    fecha_readable = fecha
-                
+                fecha    = appt.get("fecha", "")
+
                 await send_text_message(
                     to=msg.from_number,
                     message=(
                         f"¡Perfecto {nombre}! 🎉 Confirmamos tu cita:\n\n"
                         f"✂️ *Servicio:* {servicio}\n"
-                        f"📅 *Fecha:* {fecha_readable}\n"
-                        f"⏰ *Hora:* {hora_seleccionada}\n\n"
+                        f"📅 *Fecha:* {_fecha_readable(fecha)}\n"
+                        f"⏰ *Hora:* {hora_del_slot}\n\n"
                         f"¡Te esperamos! Si necesitas cambiar algo, escríbeme 😊"
                     )
                 )
-                
-                # Crear evento en Google Calendar
+
                 if all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
                     await create_calendar_event(appt)
                 continue
 
+            # ── Servicio seleccionado ────────────────────────────────────────
             state = await state_manager.get_state(msg.from_number)
             state.appointment_data["servicio"] = msg.interactive_reply_title
-            
-            # Lookup and save duration_min
+
             try:
                 business = await get_business_by_phone(phone_number_id)
                 for svc in business.services:
@@ -108,7 +134,7 @@ async def receive_message(request: Request):
                         state.appointment_data["duration_min"] = svc.get("duration_min", 30)
                         break
             except Exception as e:
-                logger.error(f"Error looking up duration for service: {e}")
+                logger.error(f"Error buscando duración del servicio: {e}")
 
             state.current_intent = "agendar"
             await state_manager.save_state(state)
@@ -119,11 +145,14 @@ async def receive_message(request: Request):
             )
             continue
 
+        # ────────────────────────────────────────────────────────────────────
+        # Mensajes de texto
+        # ────────────────────────────────────────────────────────────────────
         phone = msg.from_number
-        text = msg.text_body
+        text  = msg.text_body
         logger.info(f"Mensaje recibido de {phone}: {text!r}")
 
-        # ── Comando Reset ──────────────────────────────────────────
+        # ── Comando Reset ────────────────────────────────────────────────────
         if text.strip().lower() == "reset":
             await state_manager.clear_state(phone)
             await send_text_message(
@@ -133,12 +162,12 @@ async def receive_message(request: Request):
             logger.info(f"Estado reseteado para {phone}")
             continue
 
-        # ── Obtener estado ─────────────────────────────────────────
-        state = await state_manager.get_state(phone)
+        # ── Obtener estado ───────────────────────────────────────────────────
+        state   = await state_manager.get_state(phone)
         history = list(state.messages)
         state.messages.append({"role": "user", "content": text})
 
-        # ── Llamar a Claude ────────────────────────────────────────
+        # ── Llamar a Claude ──────────────────────────────────────────────────
         response_json = await parse_intent(
             phone, text, history,
             appointment_data=state.appointment_data
@@ -147,7 +176,7 @@ async def receive_message(request: Request):
         bot_response = response_json.get("respuesta") or "¿En qué te puedo ayudar?"
         state.messages.append({"role": "assistant", "content": bot_response})
 
-        # ── Actualizar estado ──────────────────────────────────────
+        # ── Actualizar estado ────────────────────────────────────────────────
         if response_json.get("intent"):
             state.current_intent = response_json["intent"]
 
@@ -155,60 +184,84 @@ async def receive_message(request: Request):
             if response_json.get(key) is not None:
                 state.appointment_data[key] = response_json[key]
 
+        # Fechas candidatas (multi-día)
+        if response_json.get("fechas_candidatas"):
+            state.appointment_data["fechas_candidatas"] = response_json["fechas_candidatas"]
+            # Si Claude devuelve candidatas, limpiar fecha individual para evitar conflicto
+            state.appointment_data["fecha"] = None
+        elif response_json.get("fecha"):
+            # Si Claude confirmó una fecha concreta, limpiar candidatas
+            state.appointment_data.pop("fechas_candidatas", None)
+
         await state_manager.save_state(state)
 
-        # ── Google Calendar ────────────────────────────────────────
+        # ── Google Calendar — crear evento si está todo confirmado ───────────
         if response_json.get("intent") == "confirmar":
             appt = state.appointment_data
             if all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
                 await create_calendar_event(appt)
 
-        # ── Debug logs ─────────────────────────────────────────────
-        servicio_guardado = state.appointment_data.get("servicio")
+        # ── Debug logs ───────────────────────────────────────────────────────
+        servicio_guardado   = state.appointment_data.get("servicio")
+        fechas_candidatas   = state.appointment_data.get("fechas_candidatas")
         logger.info(f"servicio_guardado: {servicio_guardado}")
         logger.info(f"intent: {response_json.get('intent')}")
-        logger.info(f"servicio en response: {response_json.get('servicio')}")
+        logger.info(f"fecha: {response_json.get('fecha')} | fechas_candidatas: {fechas_candidatas}")
 
-        # ── Responder ──────────────────────────────────────────────
-        intent = response_json.get("intent")
+        # ── Lógica de respuesta ──────────────────────────────────────────────
+        intent         = response_json.get("intent")
         fecha_parseada = response_json.get("fecha") or state.appointment_data.get("fecha")
-        servicio_guardado = state.appointment_data.get("servicio")
-        text_lower = text.lower()
+        text_lower     = text.lower()
 
+        # ¿Necesita mostrar lista de servicios?
         necesita_lista_servicios = (
             intent == "agendar" and not servicio_guardado
         ) or (
             intent == "consultar" and any(
-                palabra in text_lower for palabra in
+                p in text_lower for p in
                 ["servicio", "cuál", "cuales", "qué tienen", "que tienen", "opciones"]
             )
         )
 
+        # ¿Necesita mostrar slots para UN día ya confirmado?
         necesita_lista_horarios = (
             intent in ("agendar", "confirmar")
             and servicio_guardado
             and fecha_parseada
             and not state.appointment_data.get("hora")
+            and not fechas_candidatas          # si hay candidatas, usa el bloque multi-día
         )
 
+        # ¿Necesita mostrar slots para MÚLTIPLES días candidatos?
+        palabras_horario = ["horario", "hora", "disponib", "cuando", "cuándo", "tienes"]
+        necesita_lista_horarios_multidia = (
+            intent in ("agendar", "consultar")
+            and servicio_guardado
+            and fechas_candidatas
+            and not state.appointment_data.get("fecha")   # aún no confirmó un día
+            and not state.appointment_data.get("hora")
+            and any(p in text_lower for p in palabras_horario)
+        )
+
+        # ── RAMA: lista de servicios ─────────────────────────────────────────
         if necesita_lista_servicios:
             business = await get_business_by_phone(phone_number_id)
-            nombre = state.appointment_data.get("nombre", "")
-            saludo = f"¡Perfecto {nombre}! Te muestro nuestros servicios 😊" if nombre else "¡Con gusto! Te muestro nuestros servicios 😊"
+            nombre_c = state.appointment_data.get("nombre", "")
+            saludo   = (
+                f"¡Perfecto {nombre_c}! Te muestro nuestros servicios 😊"
+                if nombre_c else
+                "¡Con gusto! Te muestro nuestros servicios 😊"
+            )
             await send_text_message(to=phone, message=saludo)
             await asyncio.sleep(0.5)
             await send_service_list(to=phone, services=business.services)
 
+        # ── RAMA: lista de horarios — día único ──────────────────────────────
         elif necesita_lista_horarios:
-            business = await get_business_by_phone(phone_number_id)
-            # Obtener duration_min del servicio seleccionado
-            duration_min = 30
-            for svc in business.services:
-                if svc.get("name") == servicio_guardado:
-                    duration_min = svc.get("duration_min", 30)
-                    break
+            business     = await get_business_by_phone(phone_number_id)
+            duration_min = _get_service_duration(business.services, servicio_guardado)
+            creds        = _get_credentials()
 
-            creds = _get_credentials()
             slots = await check_availability(
                 date_str=fecha_parseada,
                 duration_min=duration_min,
@@ -234,17 +287,125 @@ async def receive_message(request: Request):
                     )
                 )
 
+        # ── RAMA: lista de horarios — multi-día ──────────────────────────────
+        elif necesita_lista_horarios_multidia:
+            await _send_multiday_slots(
+                phone=phone,
+                fechas=fechas_candidatas,
+                servicio=servicio_guardado,
+                phone_number_id=phone_number_id,
+                state=state,
+                bot_response=bot_response,
+            )
+
+        # ── RAMA: respuesta de texto normal ──────────────────────────────────
         else:
+            # Caso especial: hay candidatas pero el cliente no preguntó horarios todavía.
+            # Valentina ya les preguntó cuál prefieren — solo enviamos el texto de Claude.
             await send_text_message(to=phone, message=bot_response)
+
+            # Si tenemos candidatas Y servicio, mostrar slots proactivamente
+            # sin esperar que el cliente pregunte "¿qué horarios tienes?"
+            if (
+                fechas_candidatas
+                and servicio_guardado
+                and not state.appointment_data.get("hora")
+                and not state.appointment_data.get("fecha")
+            ):
+                await asyncio.sleep(0.6)
+                await _send_multiday_slots(
+                    phone=phone,
+                    fechas=fechas_candidatas,
+                    servicio=servicio_guardado,
+                    phone_number_id=phone_number_id,
+                    state=state,
+                    bot_response=None,   # ya enviamos el texto arriba
+                )
 
     return {"status": "ok"}
 
 
-# ── Helpers ────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _send_multiday_slots(
+    phone: str,
+    fechas: list[str],
+    servicio: str,
+    phone_number_id: str,
+    state,
+    bot_response: str | None,
+) -> None:
+    """Consulta Google Calendar para cada fecha candidata y envía una lista
+    interactiva de slots por día. Los IDs de slot incluyen la fecha para que
+    al seleccionar sepamos a qué día corresponde."""
+
+    business     = await get_business_by_phone(phone_number_id)
+    duration_min = _get_service_duration(business.services, servicio)
+    creds        = _get_credentials()
+
+    if bot_response:
+        await send_text_message(to=phone, message=bot_response)
+        await asyncio.sleep(0.5)
+
+    alguno_con_slots = False
+
+    for fecha_cand in fechas:
+        slots = await check_availability(
+            date_str=fecha_cand,
+            duration_min=duration_min,
+            calendar_id=settings.google_calendar_id,
+            credentials=creds
+        )
+        fecha_label = _fecha_readable(fecha_cand)
+
+        if slots:
+            alguno_con_slots = True
+            await send_text_message(
+                to=phone,
+                message=f"📅 *{fecha_label.capitalize()}* — horarios disponibles:"
+            )
+            await asyncio.sleep(0.4)
+            # Enviamos la lista con IDs que incluyen la fecha: hora_{YYYY-MM-DD}_{HH:MM}
+            await send_time_slots_list(
+                to=phone,
+                slots=slots,
+                date_str=fecha_cand,
+                service_name=servicio,
+                id_prefix=f"hora_{fecha_cand}_",   # ← clave para el flujo multi-día
+            )
+            await asyncio.sleep(0.6)
+        else:
+            await send_text_message(
+                to=phone,
+                message=f"📅 *{fecha_label.capitalize()}* — sin disponibilidad ese día 😔"
+            )
+            await asyncio.sleep(0.4)
+
+    if not alguno_con_slots:
+        await send_text_message(
+            to=phone,
+            message=(
+                "Lo siento, no encontré horarios disponibles para ninguno de esos días 😔 "
+                "¿Te gustaría intentar con otras fechas?"
+            )
+        )
+
+    # Limpiar candidatas — ya se mostraron al cliente
+    state.appointment_data.pop("fechas_candidatas", None)
+    await state_manager.save_state(state)
+
+
+def _get_service_duration(services: list[dict], service_name: str, default: int = 30) -> int:
+    """Devuelve la duración en minutos del servicio dado su nombre."""
+    for svc in services:
+        if svc.get("name") == service_name:
+            return svc.get("duration_min", default)
+    return default
+
 
 def _validate_signature(request: Request, body: bytes) -> None:
     signature = request.headers.get("X-Hub-Signature-256", "")
-    expected = "sha256=" + hmac.new(
+    expected  = "sha256=" + hmac.new(
         settings.app_secret.encode(),
         body,
         hashlib.sha256,

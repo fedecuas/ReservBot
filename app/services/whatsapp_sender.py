@@ -173,7 +173,7 @@ async def _send_payload(payload: dict) -> bool:
         return False
 
 
-async def send_time_slots_list(to: str, slots: list[str], date_str: str, service_name: str) -> None:
+async def send_time_slots_list(to: str, slots: list[str], date_str: str, service_name: str, id_prefix: str = "hora_") -> None:
     """
     Envía lista interactiva de horarios disponibles.
     Máximo 10 slots por lista (límite WhatsApp).
@@ -196,17 +196,17 @@ async def send_time_slots_list(to: str, slots: list[str], date_str: str, service
     if morning:
         sections.append({
             "title": "🌅 Mañana",
-            "rows": [{"id": f"hora_{s.replace(':', '')}", "title": s} for s in morning]
+            "rows": [{"id": f"{id_prefix}{s.replace(':', '')}", "title": s} for s in morning]
         })
     if afternoon:
         sections.append({
             "title": "☀️ Tarde",
-            "rows": [{"id": f"hora_{s.replace(':', '')}", "title": s} for s in afternoon]
+            "rows": [{"id": f"{id_prefix}{s.replace(':', '')}", "title": s} for s in afternoon]
         })
     if evening:
         sections.append({
             "title": "🌆 Noche",
-            "rows": [{"id": f"hora_{s.replace(':', '')}", "title": s} for s in evening]
+            "rows": [{"id": f"{id_prefix}{s.replace(':', '')}", "title": s} for s in evening]
         })
 
     payload = {
