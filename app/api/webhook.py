@@ -304,24 +304,6 @@ async def receive_message(request: Request):
             # Valentina ya les preguntó cuál prefieren — solo enviamos el texto de Claude.
             await send_text_message(to=phone, message=bot_response)
 
-            # Si tenemos candidatas Y servicio, mostrar slots proactivamente
-            # sin esperar que el cliente pregunte "¿qué horarios tienes?"
-            if (
-                fechas_candidatas
-                and servicio_guardado
-                and not state.appointment_data.get("hora")
-                and not state.appointment_data.get("fecha")
-            ):
-                await asyncio.sleep(0.6)
-                await _send_multiday_slots(
-                    phone=phone,
-                    fechas=fechas_candidatas,
-                    servicio=servicio_guardado,
-                    phone_number_id=phone_number_id,
-                    state=state,
-                    bot_response=None,   # ya enviamos el texto arriba
-                )
-
     return {"status": "ok"}
 
 
