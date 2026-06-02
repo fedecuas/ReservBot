@@ -325,6 +325,10 @@ async def _send_multiday_slots(
     duration_min = _get_service_duration(business.services, servicio)
     creds        = _get_credentials()
 
+    # Limpiar candidatas — ya se mostraron al cliente
+    state.appointment_data.pop("fechas_candidatas", None)
+    await state_manager.save_state(state)
+
     if bot_response:
         await send_text_message(to=phone, message=bot_response)
         await asyncio.sleep(0.5)
@@ -371,10 +375,6 @@ async def _send_multiday_slots(
                 "¿Te gustaría intentar con otras fechas?"
             )
         )
-
-    # Limpiar candidatas — ya se mostraron al cliente
-    state.appointment_data.pop("fechas_candidatas", None)
-    await state_manager.save_state(state)
 
 
 def _get_service_duration(services: list[dict], service_name: str, default: int = 30) -> int:
