@@ -134,3 +134,87 @@ async def send_service_list(to: str, services: list[dict]) -> bool:
         logger.exception(f"Excepción al intentar enviar lista a {to}: {e}")
         return False
 
+
+async def _send_payload(payload: dict) -> bool:
+    """
+    Helper interno para enviar payloads a la API de WhatsApp Cloud.
+    Normaliza el número telefónico de México (quita el '1' móvil si es de 13 dígitos).
+    """
+    to = payload.get("to", "")
+    if to.startswith("521") and len(to) == 13:
+        to = "52" + to[-10:]
+        payload["to"] = to
+        logger.info(f"Número normalizado para envío interno: {to}")
+
+    if not settings.phone_number_id or not settings.whatsapp_token:
+        logger.error("WhatsApp credentials are not configured in settings.")
+        return False
+
+    url = f"https://graph.facebook.com/v19.0/{settings.phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {settings.whatsapp_token}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=payload, timeout=10.0)
+            
+        if response.status_code in (200, 201):
+            logger.info(f"Payload enviado con éxito a {to}")
+            return True
+        else:
+            logger.error(
+                f"Error al enviar payload a {to}. Estado: {response.status_code}, Respuesta: {response.text}"
+            )
+            return False
+    except Exception as e:
+        logger.exception(f"Excepción al intentar enviar payload a {to}: {e}")
+        return False
+
+
+async def send_time_slots_list(to: str, slots: list[str], date_str: str, service_name: str) -> None:
+    """
+    Envía lista interactiva de horarios disponibles.
+    Máximo 10 slots por lista (límite WhatsApp).
+    """
+    from datetime import datetime
+    try:
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        days_es = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
+        months_es = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
+        date_readable = f"{days_es[date_obj.weekday()]} {date_obj.day} de {months_es[date_obj.month-1]}"
+    except:
+        date_readable = date_str
+
+    # Máximo 10 slots (límite de WhatsApp Interactive List)
+    slots_to_show = slots[:10]
+
+    rows = [
+        {"id": f"hora_{slot.replace(':', '')}", "title": slot}
+        for slot in slots_to_show
+    ]
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "header": {"type": "text", "text": f"📅 {date_readable}"},
+            "body": {"text": f"Horarios disponibles para *{service_name}*. ¿Cuál te queda mejor?"},
+            "footer": {"text": "Selecciona un horario 👇"},
+            "action": {
+                "button": "Ver horarios",
+                "sections": [
+                    {
+                        "title": "Horarios libres",
+                        "rows": rows
+                    }
+                ]
+            }
+        }
+    }
+    await _send_payload(payload)
+
+

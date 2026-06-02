@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime, timedelta
+import pytz
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -28,6 +29,61 @@ def _get_credentials():
     raise ValueError(f"GOOGLE_CREDENTIALS_JSON no es JSON válido ni ruta existente: {raw[:50]}")
 
 
+async def check_availability(date_str: str, duration_min: int, calendar_id: str, credentials) -> list[str]:
+    """
+    Retorna lista de slots libres para una fecha dada.
+    date_str: "YYYY-MM-DD"
+    duration_min: duración del servicio en minutos
+    Retorna: ["09:00", "09:30", "10:00", ...] solo los slots libres
+    """
+    try:
+        service = build("calendar", "v3", credentials=credentials)
+        
+        # Rango del día laboral (09:00 - 19:00 Mexico City)
+        tz = pytz.timezone("America/Mexico_City")
+        day = datetime.strptime(date_str, "%Y-%m-%d")
+        start_of_day = tz.localize(day.replace(hour=9, minute=0, second=0))
+        end_of_day = tz.localize(day.replace(hour=19, minute=0, second=0))
+
+        # Consultar eventos ocupados via freebusy
+        body = {
+            "timeMin": start_of_day.isoformat(),
+            "timeMax": end_of_day.isoformat(),
+            "timeZone": "America/Mexico_City",
+            "items": [{"id": calendar_id}]
+        }
+        result = service.freebusy().query(body=body).execute()
+        busy_periods = result["calendars"][calendar_id]["busy"]
+
+        # Generar todos los slots del día (cada 30 min)
+        all_slots = []
+        current = start_of_day
+        while current + timedelta(minutes=duration_min) <= end_of_day:
+            all_slots.append(current)
+            current += timedelta(minutes=30)
+
+        # Filtrar slots ocupados
+        free_slots = []
+        for slot in all_slots:
+            slot_end = slot + timedelta(minutes=duration_min)
+            is_busy = False
+            for busy in busy_periods:
+                busy_start = datetime.fromisoformat(busy["start"]).astimezone(tz)
+                busy_end = datetime.fromisoformat(busy["end"]).astimezone(tz)
+                if slot < busy_end and slot_end > busy_start:
+                    is_busy = True
+                    break
+            if not is_busy:
+                free_slots.append(slot.strftime("%H:%M"))
+
+        logger.info(f"Slots libres para {date_str}: {free_slots}")
+        return free_slots
+
+    except Exception as e:
+        logger.exception(f"Error consultando disponibilidad: {e}")
+        return []
+
+
 async def create_calendar_event(appointment_data: dict) -> str | None:
     try:
         nombre = appointment_data.get("nombre", "Cliente")
@@ -40,7 +96,8 @@ async def create_calendar_event(appointment_data: dict) -> str | None:
             return None
 
         start_dt = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M")
-        end_dt = start_dt + timedelta(hours=1)
+        duration = appointment_data.get("duration_min", 60)
+        end_dt = start_dt + timedelta(minutes=duration)
 
         logger.info(f"Intentando crear evento en calendarId: {settings.google_calendar_id}")
         logger.info(f"appointment_data recibido: {appointment_data}")
