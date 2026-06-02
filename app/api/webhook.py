@@ -322,13 +322,15 @@ async def _send_multiday_slots(
     interactiva de slots por día. Los IDs de slot incluyen la fecha para que
     al seleccionar sepamos a qué día corresponde."""
 
+    # Limpiar candidatas INMEDIATAMENTE para evitar loop por reenvíos de Meta
+    fechas_a_procesar = list(fechas)  # copiar antes de limpiar
+    state.appointment_data.pop("fechas_candidatas", None)
+    state.appointment_data["fecha"] = None
+    await state_manager.save_state(state)
+
     business     = await get_business_by_phone(phone_number_id)
     duration_min = _get_service_duration(business.services, servicio)
     creds        = _get_credentials()
-
-    # Limpiar candidatas — ya se mostraron al cliente
-    state.appointment_data.pop("fechas_candidatas", None)
-    await state_manager.save_state(state)
 
     if bot_response:
         await send_text_message(to=phone, message=bot_response)
@@ -336,7 +338,7 @@ async def _send_multiday_slots(
 
     alguno_con_slots = False
 
-    for fecha_cand in fechas:
+    for fecha_cand in fechas_a_procesar:   # ← cambiar fechas por fechas_a_procesar
         slots = await check_availability(
             date_str=fecha_cand,
             duration_min=duration_min,
