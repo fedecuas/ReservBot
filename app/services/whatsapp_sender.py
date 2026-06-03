@@ -252,6 +252,11 @@ async def send_time_slots_list(
     }
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, json=payload, headers=headers)
+        if resp.status_code != 200:
+            import logging
+            logging.getLogger(__name__).error(
+                f"WhatsApp API error {resp.status_code}: {resp.text}"
+            )
         resp.raise_for_status()
 
 
