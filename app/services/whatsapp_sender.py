@@ -6,14 +6,19 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
+def normalize_phone(phone: str) -> str:
+    """Normaliza número mexicano: 5215659XXXXXX → 525659XXXXXX"""
+    if phone.startswith("521") and len(phone) == 13:
+        return "52" + phone[3:]
+    return phone
+
+
 async def send_text_message(to: str, message: str) -> bool:
     """
     Envía un mensaje de texto usando la WhatsApp Cloud API v19.0.
     """
-    # Normalizar número de teléfono de México (quitar el '1' móvil si viene como '521' y tiene 13 dígitos)
-    if to.startswith("521") and len(to) == 13:
-        to = "52" + to[-10:]
-        logger.info(f"Número normalizado para envío: {to}")
+    to = normalize_phone(to)
+    logger.info(f"Número normalizado para envío: {to}")
 
     if not settings.phone_number_id or not settings.whatsapp_token:
         logger.error("WhatsApp credentials are not configured in settings.")
@@ -57,10 +62,8 @@ async def send_service_list(to: str, services: list[dict]) -> bool:
     """
     Envía una lista interactiva de servicios usando la WhatsApp Cloud API v19.0.
     """
-    # Normalizar número de teléfono de México (quitar el '1' móvil si viene como '521' y tiene 13 dígitos)
-    if to.startswith("521") and len(to) == 13:
-        to = "52" + to[-10:]
-        logger.info(f"Número normalizado para envío de lista: {to}")
+    to = normalize_phone(to)
+    logger.info(f"Número normalizado para envío de lista: {to}")
 
     if not settings.phone_number_id or not settings.whatsapp_token:
         logger.error("WhatsApp credentials are not configured in settings.")
@@ -141,10 +144,9 @@ async def _send_payload(payload: dict) -> bool:
     Normaliza el número telefónico de México (quita el '1' móvil si es de 13 dígitos).
     """
     to = payload.get("to", "")
-    if to.startswith("521") and len(to) == 13:
-        to = "52" + to[-10:]
-        payload["to"] = to
-        logger.info(f"Número normalizado para envío interno: {to}")
+    to = normalize_phone(to)
+    payload["to"] = to
+    logger.info(f"Número normalizado para envío interno: {to}")
 
     if not settings.phone_number_id or not settings.whatsapp_token:
         logger.error("WhatsApp credentials are not configured in settings.")
@@ -196,10 +198,7 @@ async def send_time_slots_list(
     """
     settings = get_settings()
 
-    # Normalizar número mexicano: 5215659XXXXXX → 525659XXXXXX
-    if to.startswith("521") and len(to) == 13:
-        to = "52" + to[3:]
-    
+    to = normalize_phone(to)
     logger.info(f"Número normalizado para envío de slots: {to}")
 
     # Construir filas de la lista (máx 10 por sección en WhatsApp)
