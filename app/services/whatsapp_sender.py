@@ -196,6 +196,12 @@ async def send_time_slots_list(
     """
     settings = get_settings()
 
+    # Normalizar número mexicano: 5215659XXXXXX → 525659XXXXXX
+    if to.startswith("521") and len(to) == 13:
+        to = "52" + to[3:]
+    
+    logger.info(f"Número normalizado para envío de slots: {to}")
+
     # Construir filas de la lista (máx 10 por sección en WhatsApp)
     rows = []
     for slot in slots[:10]:
