@@ -253,7 +253,6 @@ async def receive_message(request: Request):
             and fechas_candidatas
             and not state.appointment_data.get("fecha")   # aún no confirmó un día
             and not state.appointment_data.get("hora")
-            and any(p in text_lower for p in palabras_horario)
         )
 
         # ── RAMA: lista de servicios ─────────────────────────────────────────
