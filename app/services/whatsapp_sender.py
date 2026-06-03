@@ -250,6 +250,8 @@ async def send_time_slots_list(
         "Authorization": f"Bearer {settings.whatsapp_token}",
         "Content-Type":  "application/json",
     }
+    logger.info(f"Enviando slots a: {to}, phone_number_id: {settings.phone_number_id}")
+    logger.info(f"Rows IDs: {[r['id'] for r in rows]}")
     async with httpx.AsyncClient() as client:
         resp = await client.post(url, json=payload, headers=headers)
         if resp.status_code != 200:
