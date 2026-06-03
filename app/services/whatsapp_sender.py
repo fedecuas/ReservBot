@@ -20,7 +20,7 @@ async def send_text_message(to: str, message: str) -> bool:
         return False
 
 
-    url = f"https://graph.facebook.com/v19.0/{settings.phone_number_id}/messages"
+    url = f"https://graph.facebook.com/v25.0/{settings.phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {settings.whatsapp_token}",
         "Content-Type": "application/json",
@@ -66,7 +66,7 @@ async def send_service_list(to: str, services: list[dict]) -> bool:
         logger.error("WhatsApp credentials are not configured in settings.")
         return False
 
-    url = f"https://graph.facebook.com/v19.0/{settings.phone_number_id}/messages"
+    url = f"https://graph.facebook.com/v25.0/{settings.phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {settings.whatsapp_token}",
         "Content-Type": "application/json",
@@ -150,7 +150,7 @@ async def _send_payload(payload: dict) -> bool:
         logger.error("WhatsApp credentials are not configured in settings.")
         return False
 
-    url = f"https://graph.facebook.com/v19.0/{settings.phone_number_id}/messages"
+    url = f"https://graph.facebook.com/v25.0/{settings.phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {settings.whatsapp_token}",
         "Content-Type": "application/json",
@@ -245,7 +245,7 @@ async def send_time_slots_list(
 
     # ── Enviar via Meta Cloud API ──────────────────────────────────
     import httpx
-    url = f"https://graph.facebook.com/v19.0/{settings.phone_number_id}/messages"
+    url = f"https://graph.facebook.com/v25.0/{settings.phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {settings.whatsapp_token}",
         "Content-Type":  "application/json",
