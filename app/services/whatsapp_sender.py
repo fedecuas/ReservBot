@@ -244,7 +244,7 @@ async def send_time_slots_list(
 
     # ── Enviar via Meta Cloud API ──────────────────────────────────
     import httpx
-    url = f"https://graph.facebook.com/v18.0/{settings.phone_number_id}/messages"
+    url = f"https://graph.facebook.com/v19.0/{settings.phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {settings.whatsapp_token}",
         "Content-Type":  "application/json",
