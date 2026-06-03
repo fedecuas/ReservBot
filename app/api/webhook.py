@@ -92,17 +92,17 @@ async def receive_message(request: Request):
                 # El id tiene el formato:  hora_{HH:MM}  o  hora_{YYYY-MM-DD}_{HH:MM}
                 # para soportar el flujo multi-día.
                 parts = msg.interactive_reply_id.split("_")
-
                 if len(parts) == 3:
-                    # hora_{YYYY-MM-DD}_{HH:MM}  → slot de un día candidato
-                    fecha_del_slot = parts[1]
-                    hora_del_slot  = parts[2]
-                    if ":" not in hora_del_slot and len(hora_del_slot) == 4:
-                        hora_del_slot = f"{hora_del_slot[:2]}:{hora_del_slot[2:]}"
+                    # fecha viene como "20260604" → convertir a "2026-06-04"
+                    raw_fecha = parts[1]
+                    fecha_del_slot = f"{raw_fecha[:4]}-{raw_fecha[4:6]}-{raw_fecha[6:]}"
+                    # hora viene como "0900" → convertir a "09:00"
+                    raw_hora = parts[2]
+                    hora_del_slot = f"{raw_hora[:2]}:{raw_hora[2:]}"
                 else:
-                    # hora_{HH:MM}  → slot del flujo normal (fecha ya confirmada)
                     fecha_del_slot = None
-                    hora_del_slot  = msg.interactive_reply_title
+                    raw_hora = msg.interactive_reply_title.replace(":", "")
+                    hora_del_slot = msg.interactive_reply_title
 
                 state = await state_manager.get_state(msg.from_number)
 
@@ -365,13 +365,14 @@ async def _send_multiday_slots(
                 message=f"📅 *{fecha_label.capitalize()}* — horarios disponibles:"
             )
             await asyncio.sleep(0.4)
-            # Enviamos la lista con IDs que incluyen la fecha: hora_{YYYY-MM-DD}_{HH:MM}
+            # Enviamos la lista con IDs que incluyen la fecha: hora_{YYYYMMDD}_{HHMM}
+            fecha_sin_guiones = fecha_cand.replace("-", "")  # "2026-06-04" → "20260604"
             await send_time_slots_list(
                 to=phone,
                 slots=slots,
                 date_str=fecha_cand,
                 service_name=servicio,
-                id_prefix=f"hora_{fecha_cand}_",   # ← clave para el flujo multi-día
+                id_prefix=f"hora_{fecha_sin_guiones}_",   # ← clave para el flujo multi-día
             )
             await asyncio.sleep(0.6)
         else:

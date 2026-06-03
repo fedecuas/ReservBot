@@ -421,7 +421,7 @@ def test_webhook_interactive_multiday_hour_selection_creates_event():
                             "interactive": {
                                 "type": "list_reply",
                                 "list_reply": {
-                                    "id": "hora_2026-06-02_1500",
+                                    "id": "hora_20260602_1500",
                                     "title": "15:00"
                                 }
                             }
@@ -529,14 +529,14 @@ def test_webhook_post_sends_multiday_time_slots_list():
             slots=["09:00", "09:30"],
             date_str="2026-06-02",
             service_name="Corte de cabello",
-            id_prefix="hora_2026-06-02_"
+            id_prefix="hora_20260602_"
         )
         mock_send_slots.assert_any_call(
             to="5215512345678",
             slots=["09:00", "09:30"],
             date_str="2026-06-03",
             service_name="Corte de cabello",
-            id_prefix="hora_2026-06-03_"
+            id_prefix="hora_20260603_"
         )
 
     assert res.status_code == 200

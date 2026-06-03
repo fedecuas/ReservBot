@@ -199,8 +199,9 @@ async def send_time_slots_list(
     # Construir filas de la lista (máx 10 por sección en WhatsApp)
     rows = []
     for slot in slots[:10]:
+        slot_id = slot.replace(":", "")  # "09:00" → "0900"
         rows.append({
-            "id":          f"{id_prefix}{slot}",   # ← usa el prefijo
+            "id":          f"{id_prefix}{slot_id}",   # ← usa el prefijo
             "title":       slot,
             "description": service_name,
         })
