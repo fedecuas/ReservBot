@@ -6,7 +6,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = '002_add_professionals_appointments_conversations'
+revision = '002_platform_v2'
 down_revision = '001_initial'
 branch_labels = None
 depends_on = None
