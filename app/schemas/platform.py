@@ -1,5 +1,6 @@
 """
-Schemas Pydantic para la API de plataforma EQKO.
+Schemas Pydantic para la API de plataforma EQKO — v2
+Agrega: Professional, RescheduleRequest
 """
 from pydantic import BaseModel
 from typing import Optional, List
@@ -16,6 +17,7 @@ class BusinessCreate(BaseModel):
     language: Optional[str] = "es"
     bot_name: Optional[str] = "Valentina"
     welcome_message: Optional[str] = None
+    owner_phone: Optional[str] = None          # ← NUEVO: para notificaciones al dueño
     subscription_plan: Optional[str] = "starter"
     monthly_price: Optional[Decimal] = None
     waba_id: Optional[str] = None
@@ -29,6 +31,7 @@ class BusinessUpdate(BaseModel):
     language: Optional[str] = None
     bot_name: Optional[str] = None
     welcome_message: Optional[str] = None
+    owner_phone: Optional[str] = None          # ← NUEVO
     bot_active: Optional[bool] = None
     subscription_plan: Optional[str] = None
     subscription_status: Optional[str] = None
@@ -54,7 +57,7 @@ class ServicesUpdate(BaseModel):
 # ── Hours ─────────────────────────────────────────────────────────
 
 class HourItem(BaseModel):
-    day_of_week: int          # 0=Lunes … 6=Domingo
+    day_of_week: int
     is_closed: Optional[bool] = False
     start_time: Optional[str] = "09:00"
     end_time: Optional[str] = "19:00"
@@ -62,3 +65,28 @@ class HourItem(BaseModel):
 
 class HoursUpdate(BaseModel):
     hours: List[HourItem]
+
+
+# ── Professionals — NUEVO ─────────────────────────────────────────
+
+class ProfessionalCreate(BaseModel):
+    name: str
+    phone: Optional[str] = None
+    calendar_id: Optional[str] = None         # Google Calendar propio del profesional
+    accepts_walkins: Optional[bool] = False
+
+
+class ProfessionalUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    calendar_id: Optional[str] = None
+    active: Optional[bool] = None
+    accepts_walkins: Optional[bool] = None
+
+
+# ── Appointments — NUEVO ──────────────────────────────────────────
+
+class RescheduleRequest(BaseModel):
+    new_date: str                              # YYYY-MM-DD
+    new_time: str                              # HH:MM
+    new_calendar_event_id: Optional[str] = None
