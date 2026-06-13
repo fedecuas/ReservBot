@@ -11,6 +11,9 @@ from app.services.state_manager import state_manager
 from app.services.intent_parser import parse_intent
 from app.services.business_config import get_business_by_phone
 from app.services.calendar_service import create_calendar_event, check_availability, _get_credentials
+from app.core.database import SessionLocal
+from app.services.appointment_service import create_appointment, log_conversation_message
+from app.services.notification_service import notify_owner_new_appointment
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 logger = get_logger(__name__)
@@ -131,8 +134,39 @@ async def receive_message(request: Request):
                     )
                 )
 
+                calendar_event_id = None
                 if all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
-                    await create_calendar_event(appt)
+                    calendar_event_id = await create_calendar_event(appt)
+
+                # Registrar cita en PostgreSQL
+                try:
+                    db = SessionLocal()
+                    business = await get_business_by_phone(phone_number_id)
+                    if business:
+                        await create_appointment(
+                            db=db,
+                            business_id=business.id,
+                            client_name=nombre,
+                            client_phone=msg.from_number,
+                            service_name=servicio,
+                            appointment_date=fecha,
+                            appointment_time=hora_del_slot,
+                            duration_min=appt.get("duration_min", 30),
+                            calendar_event_id=calendar_event_id,
+                        )
+                        # Notificar al dueño del negocio
+                        if business.owner_phone:
+                            await notify_owner_new_appointment(
+                                owner_phone=business.owner_phone,
+                                client_name=nombre,
+                                service_name=servicio,
+                                appointment_date=fecha,
+                                appointment_time=hora_del_slot,
+                            )
+                    db.close()
+                except Exception as e:
+                    logger.error(f"Error registrando cita en DB: {e}")
+
                 continue
 
             # ── Servicio seleccionado ────────────────────────────────────────
