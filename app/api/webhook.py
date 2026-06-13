@@ -141,11 +141,14 @@ async def receive_message(request: Request):
                 # Registrar cita en PostgreSQL
                 try:
                     db = SessionLocal()
-                    business = await get_business_by_phone(phone_number_id)
-                    if business:
+                    from app.models.db_models import Business as BusinessModel
+                    business_db = db.query(BusinessModel).filter(
+                        BusinessModel.phone_number_id == phone_number_id
+                    ).first()
+                    if business_db:
                         await create_appointment(
                             db=db,
-                            business_id=business.id,
+                            business_id=business_db.id,
                             client_name=nombre,
                             client_phone=msg.from_number,
                             service_name=servicio,
@@ -155,9 +158,9 @@ async def receive_message(request: Request):
                             calendar_event_id=calendar_event_id,
                         )
                         # Notificar al dueño del negocio
-                        if business.owner_phone:
+                        if business_db.owner_phone:
                             await notify_owner_new_appointment(
-                                owner_phone=business.owner_phone,
+                                owner_phone=business_db.owner_phone,
                                 client_name=nombre,
                                 service_name=servicio,
                                 appointment_date=fecha,
