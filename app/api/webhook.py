@@ -291,6 +291,11 @@ async def receive_message(request: Request):
             and not state.appointment_data.get("hora")
         )
 
+        logger.info(f"necesita_lista_servicios: {necesita_lista_servicios}")
+        logger.info(f"necesita_lista_horarios: {necesita_lista_horarios}")
+        logger.info(f"necesita_lista_horarios_multidia: {necesita_lista_horarios_multidia}")
+        logger.info(f"fecha_parseada: {fecha_parseada}")
+
         # ── RAMA: lista de servicios ─────────────────────────────────────────
         if necesita_lista_servicios:
             business = await get_business_by_phone(phone_number_id)
