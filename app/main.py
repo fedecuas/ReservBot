@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.core.logging import setup_logging, get_logger
 from app.core.config import get_settings
 from app.api import webhook
+from app.api import platform
 
 settings = get_settings()
 
@@ -22,6 +23,7 @@ app = FastAPI(
 )
 
 app.include_router(webhook.router)
+app.include_router(platform.router)
 
 @app.get("/health")
 async def health():
