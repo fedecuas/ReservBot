@@ -157,6 +157,7 @@ async def receive_message(request: Request):
                             duration_min=appt.get("duration_min", 30),
                             calendar_event_id=calendar_event_id,
                         )
+                        logger.info(f"Cita guardada en DB — business_id: {business_db.id}, phone_number_id: {phone_number_id}")
                         # Notificar al dueño del negocio
                         if business_db.owner_phone:
                             await notify_owner_new_appointment(
