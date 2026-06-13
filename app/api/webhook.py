@@ -12,7 +12,7 @@ from app.services.intent_parser import parse_intent
 from app.services.business_config import get_business_by_phone
 from app.services.calendar_service import create_calendar_event, check_availability, _get_credentials
 from app.core.database import SessionLocal
-from app.services.appointment_service import create_appointment, log_conversation_message
+from app.services.appointment_service import create_appointment
 from app.services.notification_service import notify_owner_new_appointment
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
@@ -275,7 +275,7 @@ async def receive_message(request: Request):
 
         # ¿Necesita mostrar slots para UN día ya confirmado?
         necesita_lista_horarios = (
-            intent in ("agendar", "confirmar")
+            intent in ("agendar", "confirmar", "consultar")
             and servicio_guardado
             and fecha_parseada
             and not state.appointment_data.get("hora")
@@ -283,7 +283,6 @@ async def receive_message(request: Request):
         )
 
         # ¿Necesita mostrar slots para MÚLTIPLES días candidatos?
-        palabras_horario = ["horario", "hora", "disponib", "cuando", "cuándo", "tienes"]
         necesita_lista_horarios_multidia = (
             intent in ("agendar", "consultar")
             and servicio_guardado
