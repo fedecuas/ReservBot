@@ -12,7 +12,7 @@ from app.services.intent_parser import parse_intent
 from app.services.business_config import get_business_by_phone
 from app.services.calendar_service import create_calendar_event, check_availability, _get_credentials
 from app.core.database import SessionLocal
-from app.services.appointment_service import create_appointment
+from app.services.appointment_service import create_appointment, log_conversation_message, close_conversation
 from app.services.notification_service import notify_owner_new_appointment
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
@@ -210,6 +210,18 @@ async def receive_message(request: Request):
                 message="¡Hola! Soy Valentina, la recepcionista virtual 😊 ¿Con quién tengo el gusto de hablar?"
             )
             logger.info(f"Estado reseteado para {phone}")
+            # Cerrar conversación activa en DB
+            try:
+                db = SessionLocal()
+                from app.models.db_models import Business as BusinessModel
+                business_db = db.query(BusinessModel).filter(
+                    BusinessModel.phone_number_id == phone_number_id
+                ).first()
+                if business_db:
+                    await close_conversation(db, business_db.id, phone)
+                db.close()
+            except Exception as e:
+                logger.error(f"Error cerrando conversación: {e}")
             continue
 
         # ── Obtener estado ───────────────────────────────────────────────────
@@ -225,6 +237,36 @@ async def receive_message(request: Request):
 
         bot_response = response_json.get("respuesta") or "¿En qué te puedo ayudar?"
         state.messages.append({"role": "assistant", "content": bot_response})
+
+        # Log de conversación en PostgreSQL
+        try:
+            db = SessionLocal()
+            from app.models.db_models import Business as BusinessModel
+            business_db = db.query(BusinessModel).filter(
+                BusinessModel.phone_number_id == phone_number_id
+            ).first()
+            if business_db:
+                await log_conversation_message(
+                    db=db,
+                    business_id=business_db.id,
+                    client_phone=phone,
+                    client_name=state.appointment_data.get("nombre"),
+                    role="user",
+                    content=text,
+                    intent=response_json.get("intent"),
+                )
+                await log_conversation_message(
+                    db=db,
+                    business_id=business_db.id,
+                    client_phone=phone,
+                    client_name=state.appointment_data.get("nombre"),
+                    role="assistant",
+                    content=bot_response,
+                )
+            db.close()
+        except Exception as e:
+            logger.error(f"Error logging conversación: {e}")
+
 
         # ── Actualizar estado ────────────────────────────────────────────────
         if response_json.get("intent"):
