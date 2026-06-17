@@ -12,6 +12,7 @@ from app.services.intent_parser import parse_intent
 from app.services.business_config import get_business_by_phone
 from app.services.calendar_service import create_calendar_event, check_availability, _get_credentials
 from app.core.database import SessionLocal
+from app.models.db_models import Business as BusinessModel
 from app.services.appointment_service import create_appointment, log_conversation_message, close_conversation
 from app.services.notification_service import notify_owner_new_appointment
 
@@ -139,13 +140,12 @@ async def receive_message(request: Request):
                     calendar_event_id = await create_calendar_event(appt)
 
                 # Registrar cita en PostgreSQL
+                db = SessionLocal()
                 try:
-                    db = SessionLocal()
-                    from app.models.db_models import Business as BusinessModel
                     business_db = db.query(BusinessModel).filter(
                         BusinessModel.phone_number_id == phone_number_id
                     ).first()
-                    if business_db:
+                    if business_db and all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
                         await create_appointment(
                             db=db,
                             business_id=business_db.id,
@@ -167,9 +167,10 @@ async def receive_message(request: Request):
                                 appointment_date=fecha,
                                 appointment_time=hora_del_slot,
                             )
-                    db.close()
                 except Exception as e:
                     logger.error(f"Error registrando cita en DB: {e}")
+                finally:
+                    db.close()
 
                 continue
 
@@ -211,17 +212,17 @@ async def receive_message(request: Request):
             )
             logger.info(f"Estado reseteado para {phone}")
             # Cerrar conversación activa en DB
+            db = SessionLocal()
             try:
-                db = SessionLocal()
-                from app.models.db_models import Business as BusinessModel
                 business_db = db.query(BusinessModel).filter(
                     BusinessModel.phone_number_id == phone_number_id
                 ).first()
                 if business_db:
                     await close_conversation(db, business_db.id, phone)
-                db.close()
             except Exception as e:
                 logger.error(f"Error cerrando conversación: {e}")
+            finally:
+                db.close()
             continue
 
         # ── Obtener estado ───────────────────────────────────────────────────
@@ -239,9 +240,8 @@ async def receive_message(request: Request):
         state.messages.append({"role": "assistant", "content": bot_response})
 
         # Log de conversación en PostgreSQL
+        db = SessionLocal()
         try:
-            db = SessionLocal()
-            from app.models.db_models import Business as BusinessModel
             business_db = db.query(BusinessModel).filter(
                 BusinessModel.phone_number_id == phone_number_id
             ).first()
@@ -263,9 +263,10 @@ async def receive_message(request: Request):
                     role="assistant",
                     content=bot_response,
                 )
-            db.close()
         except Exception as e:
             logger.error(f"Error logging conversación: {e}")
+        finally:
+            db.close()
 
 
         # ── Actualizar estado ────────────────────────────────────────────────

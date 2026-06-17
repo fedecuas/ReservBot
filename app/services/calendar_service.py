@@ -123,7 +123,7 @@ async def create_calendar_event(appointment_data: dict) -> str | None:
         ).execute()
 
         logger.info(f"Resultado completo de Google: {result}")
-        event_link = result.get("htmlLink")
+        event_link = result.get("id")
         logger.info(f"Evento creado en Calendar: {event_link}")
         return event_link
 

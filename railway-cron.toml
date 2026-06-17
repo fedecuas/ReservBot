@@ -1,2 +1,3 @@
 [deploy]
 startCommand = "python -m app.jobs.reminder_cron"
+cronSchedule = "0 16 * * *"
