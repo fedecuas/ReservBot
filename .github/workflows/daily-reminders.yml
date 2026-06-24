@@ -1,0 +1,29 @@
+name: Daily Reminders
+
+on:
+  schedule:
+    - cron: "0 16 * * *"   # 16:00 UTC = 10:00 AM Ciudad de México (CST)
+  workflow_dispatch:         # permite disparo manual desde GitHub UI
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger reminder endpoint
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.API_URL }}/platform/jobs/send-reminders" \
+            -H "X-Platform-Key: ${{ secrets.PLATFORM_API_KEY }}" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json")
+
+          body=$(echo "$response" | head -n -1)
+          status=$(echo "$response" | tail -n 1)
+
+          echo "HTTP $status — $body"
+
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Reminders endpoint returned HTTP $status"
+            exit 1
+          fi
