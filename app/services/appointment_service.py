@@ -117,8 +117,10 @@ async def get_appointments_pending_reminder(db: Session) -> list[Appointment]:
     - reminder_sent: False
     Usado por el cron job de recordatorios 24h.
     """
-    from datetime import date, timedelta
-    tomorrow = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+    import pytz
+    from datetime import datetime, timedelta
+    tz = pytz.timezone("America/Mexico_City")
+    tomorrow = (datetime.now(tz).date() + timedelta(days=1)).strftime("%Y-%m-%d")
     return (
         db.query(Appointment)
         .filter(

@@ -61,7 +61,6 @@ async def receive_message(request: Request):
         logger.error(f"Error parseando payload: {e}")
         return {"status": "ok"}
 
-    # ── Extraer phone_number_id del payload (Tenant ID) ─────────────────────
     phone_number_id = payload.get_phone_number_id()
     if not phone_number_id:
         phone_number_id = settings.phone_number_id
@@ -84,67 +83,64 @@ async def receive_message(request: Request):
         except Exception as e:
             logger.warning(f"Redis dedup falló, procesando igual: {e}")
 
-        # ── Respuesta interactiva ────────────────────────────────────────────
-        if msg.type == "interactive":
-            logger.info(
-                f"Respuesta interactiva recibida: "
-                f"id={msg.interactive_reply_id}, title={msg.interactive_reply_title}"
-            )
+        # Una sola sesión DB por mensaje — se cierra en el finally
+        db = SessionLocal()
+        try:
+            business_db = db.query(BusinessModel).filter(
+                BusinessModel.phone_number_id == phone_number_id
+            ).first()
 
-            if msg.interactive_reply_id.startswith("hora_"):
-                # ── Slot de horario seleccionado ─────────────────────────────
-                # El id tiene el formato:  hora_{HH:MM}  o  hora_{YYYY-MM-DD}_{HH:MM}
-                # para soportar el flujo multi-día.
-                parts = msg.interactive_reply_id.split("_")
-                if len(parts) == 3:
-                    # fecha viene como "20260604" → convertir a "2026-06-04"
-                    raw_fecha = parts[1]
-                    fecha_del_slot = f"{raw_fecha[:4]}-{raw_fecha[4:6]}-{raw_fecha[6:]}"
-                    # hora viene como "0900" → convertir a "09:00"
-                    raw_hora = parts[2]
-                    hora_del_slot = f"{raw_hora[:2]}:{raw_hora[2:]}"
-                else:
-                    fecha_del_slot = None
-                    raw_hora = msg.interactive_reply_title.replace(":", "")
-                    hora_del_slot = msg.interactive_reply_title
-
-                state = await state_manager.get_state(msg.from_number)
-
-                # Si el slot trae fecha propia (multi-día), la confirmamos ahora
-                if fecha_del_slot:
-                    state.appointment_data["fecha"] = fecha_del_slot
-                    state.appointment_data.pop("fechas_candidatas", None)
-
-                state.appointment_data["hora"] = hora_del_slot
-                state.current_intent = "confirmar"
-                await state_manager.save_state(state)
-
-                appt  = state.appointment_data
-                nombre   = appt.get("nombre", "")
-                servicio = appt.get("servicio", "")
-                fecha    = appt.get("fecha", "")
-
-                await send_text_message(
-                    to=msg.from_number,
-                    message=(
-                        f"¡Perfecto {nombre}! 🎉 Confirmamos tu cita:\n\n"
-                        f"✂️ *Servicio:* {servicio}\n"
-                        f"📅 *Fecha:* {_fecha_readable(fecha)}\n"
-                        f"⏰ *Hora:* {hora_del_slot}\n\n"
-                        f"¡Te esperamos! Si necesitas cambiar algo, escríbeme 😊"
-                    )
+            # ── Respuesta interactiva ────────────────────────────────────────────
+            if msg.type == "interactive":
+                logger.info(
+                    f"Respuesta interactiva recibida: "
+                    f"id={msg.interactive_reply_id}, title={msg.interactive_reply_title}"
                 )
 
-                calendar_event_id = None
-                if all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
-                    calendar_event_id = await create_calendar_event(appt)
+                if msg.interactive_reply_id and msg.interactive_reply_id.startswith("hora_"):
+                    # ── Slot de horario seleccionado ─────────────────────────────
+                    parts = msg.interactive_reply_id.split("_")
+                    if len(parts) == 3:
+                        raw_fecha = parts[1]
+                        fecha_del_slot = f"{raw_fecha[:4]}-{raw_fecha[4:6]}-{raw_fecha[6:]}"
+                        raw_hora = parts[2]
+                        hora_del_slot = f"{raw_hora[:2]}:{raw_hora[2:]}"
+                    else:
+                        fecha_del_slot = None
+                        hora_del_slot = msg.interactive_reply_title
 
-                # Registrar cita en PostgreSQL
-                db = SessionLocal()
-                try:
-                    business_db = db.query(BusinessModel).filter(
-                        BusinessModel.phone_number_id == phone_number_id
-                    ).first()
+                    state = await state_manager.get_state(msg.from_number)
+
+                    if fecha_del_slot:
+                        state.appointment_data["fecha"] = fecha_del_slot
+                        state.appointment_data.pop("fechas_candidatas", None)
+
+                    state.appointment_data["hora"] = hora_del_slot
+                    state.current_intent = "confirmar"
+                    await state_manager.save_state(state)
+
+                    appt     = state.appointment_data
+                    nombre   = appt.get("nombre", "")
+                    servicio = appt.get("servicio", "")
+                    fecha    = appt.get("fecha", "")
+
+                    await send_text_message(
+                        to=msg.from_number,
+                        message=(
+                            f"¡Perfecto {nombre}! 🎉 Confirmamos tu cita:\n\n"
+                            f"✂️ *Servicio:* {servicio}\n"
+                            f"📅 *Fecha:* {_fecha_readable(fecha)}\n"
+                            f"⏰ *Hora:* {hora_del_slot}\n\n"
+                            f"¡Te esperamos! Si necesitas cambiar algo, escríbeme 😊"
+                        )
+                    )
+
+                    calendar_event_id = None
+                    if all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
+                        calendar_event_id = await create_calendar_event(appt)
+                        if calendar_event_id is None:
+                            logger.warning("Cita confirmada pero el evento de Google Calendar no se creó")
+
                     if business_db and all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
                         await create_appointment(
                             db=db,
@@ -158,7 +154,6 @@ async def receive_message(request: Request):
                             calendar_event_id=calendar_event_id,
                         )
                         logger.info(f"Cita guardada en DB — business_id: {business_db.id}, phone_number_id: {phone_number_id}")
-                        # Notificar al dueño del negocio
                         if business_db.owner_phone:
                             await notify_owner_new_appointment(
                                 owner_phone=business_db.owner_phone,
@@ -167,84 +162,65 @@ async def receive_message(request: Request):
                                 appointment_date=fecha,
                                 appointment_time=hora_del_slot,
                             )
-                except Exception as e:
-                    logger.error(f"Error registrando cita en DB: {e}")
-                finally:
-                    db.close()
+                    continue
 
+                # ── Servicio seleccionado ────────────────────────────────────────
+                if msg.interactive_reply_id and msg.interactive_reply_title:
+                    state = await state_manager.get_state(msg.from_number)
+                    state.appointment_data["servicio"] = msg.interactive_reply_title
+
+                    try:
+                        business = await get_business_by_phone(phone_number_id)
+                        for svc in business.services:
+                            if svc.get("name") == msg.interactive_reply_title:
+                                state.appointment_data["duration_min"] = svc.get("duration_min", 30)
+                                break
+                    except Exception as e:
+                        logger.error(f"Error buscando duración del servicio: {e}")
+
+                    state.current_intent = "agendar"
+                    await state_manager.save_state(state)
+                    logger.info(f"Servicio guardado: {state.appointment_data}")
+                    await send_text_message(
+                        to=msg.from_number,
+                        message=f"Perfecto, seleccionaste *{msg.interactive_reply_title}*. ¿Qué día te viene mejor?"
+                    )
                 continue
 
-            # ── Servicio seleccionado ────────────────────────────────────────
-            state = await state_manager.get_state(msg.from_number)
-            state.appointment_data["servicio"] = msg.interactive_reply_title
+            # ────────────────────────────────────────────────────────────────────
+            # Mensajes de texto
+            # ────────────────────────────────────────────────────────────────────
+            phone = msg.from_number
+            text  = msg.text_body
+            logger.info(f"Mensaje recibido de {phone}: {text!r}")
 
-            try:
-                business = await get_business_by_phone(phone_number_id)
-                for svc in business.services:
-                    if svc.get("name") == msg.interactive_reply_title:
-                        state.appointment_data["duration_min"] = svc.get("duration_min", 30)
-                        break
-            except Exception as e:
-                logger.error(f"Error buscando duración del servicio: {e}")
-
-            state.current_intent = "agendar"
-            await state_manager.save_state(state)
-            logger.info(f"Servicio guardado: {state.appointment_data}")
-            await send_text_message(
-                to=msg.from_number,
-                message=f"Perfecto, seleccionaste *{msg.interactive_reply_title}*. ¿Qué día te viene mejor?"
-            )
-            continue
-
-        # ────────────────────────────────────────────────────────────────────
-        # Mensajes de texto
-        # ────────────────────────────────────────────────────────────────────
-        phone = msg.from_number
-        text  = msg.text_body
-        logger.info(f"Mensaje recibido de {phone}: {text!r}")
-
-        # ── Comando Reset ────────────────────────────────────────────────────
-        if text.strip().lower() == "reset":
-            await state_manager.clear_state(phone)
-            await send_text_message(
-                to=phone,
-                message="¡Hola! Soy Valentina, la recepcionista virtual 😊 ¿Con quién tengo el gusto de hablar?"
-            )
-            logger.info(f"Estado reseteado para {phone}")
-            # Cerrar conversación activa en DB
-            db = SessionLocal()
-            try:
-                business_db = db.query(BusinessModel).filter(
-                    BusinessModel.phone_number_id == phone_number_id
-                ).first()
+            # ── Comando Reset ────────────────────────────────────────────────────
+            if text.strip().lower() == "reset":
+                await state_manager.clear_state(phone)
+                await send_text_message(
+                    to=phone,
+                    message="¡Hola! Soy Valentina, la recepcionista virtual 😊 ¿Con quién tengo el gusto de hablar?"
+                )
+                logger.info(f"Estado reseteado para {phone}")
                 if business_db:
                     await close_conversation(db, business_db.id, phone)
-            except Exception as e:
-                logger.error(f"Error cerrando conversación: {e}")
-            finally:
-                db.close()
-            continue
+                continue
 
-        # ── Obtener estado ───────────────────────────────────────────────────
-        state   = await state_manager.get_state(phone)
-        history = list(state.messages)
-        state.messages.append({"role": "user", "content": text})
+            # ── Obtener estado ───────────────────────────────────────────────────
+            state   = await state_manager.get_state(phone)
+            history = list(state.messages)
+            state.messages.append({"role": "user", "content": text})
 
-        # ── Llamar a Claude ──────────────────────────────────────────────────
-        response_json = await parse_intent(
-            phone, text, history,
-            appointment_data=state.appointment_data
-        )
+            # ── Llamar a Claude ──────────────────────────────────────────────────
+            response_json = await parse_intent(
+                phone, text, history,
+                appointment_data=state.appointment_data
+            )
 
-        bot_response = response_json.get("respuesta") or "¿En qué te puedo ayudar?"
-        state.messages.append({"role": "assistant", "content": bot_response})
+            bot_response = response_json.get("respuesta") or "¿En qué te puedo ayudar?"
+            state.messages.append({"role": "assistant", "content": bot_response})
 
-        # Log de conversación en PostgreSQL
-        db = SessionLocal()
-        try:
-            business_db = db.query(BusinessModel).filter(
-                BusinessModel.phone_number_id == phone_number_id
-            ).first()
+            # Log de conversación en DB
             if business_db:
                 await log_conversation_message(
                     db=db,
@@ -263,143 +239,154 @@ async def receive_message(request: Request):
                     role="assistant",
                     content=bot_response,
                 )
+
+            # ── Actualizar estado ────────────────────────────────────────────────
+            if response_json.get("intent"):
+                state.current_intent = response_json["intent"]
+
+            for key in ["servicio", "fecha", "hora", "nombre"]:
+                if response_json.get(key) is not None:
+                    state.appointment_data[key] = response_json[key]
+
+            if response_json.get("fechas_candidatas"):
+                state.appointment_data["fechas_candidatas"] = response_json["fechas_candidatas"]
+                state.appointment_data["fecha"] = None
+            elif response_json.get("fecha"):
+                state.appointment_data.pop("fechas_candidatas", None)
+
+            await state_manager.save_state(state)
+
+            # ── Google Calendar + DB — confirmar cita por texto libre ────────────
+            if response_json.get("intent") == "confirmar":
+                appt = state.appointment_data
+                if all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
+                    calendar_event_id = await create_calendar_event(appt)
+                    if calendar_event_id is None:
+                        logger.warning("Cita confirmada (texto) pero el evento de Google Calendar no se creó")
+                    if business_db:
+                        await create_appointment(
+                            db=db,
+                            business_id=business_db.id,
+                            client_name=appt.get("nombre", ""),
+                            client_phone=phone,
+                            service_name=appt.get("servicio", ""),
+                            appointment_date=appt.get("fecha", ""),
+                            appointment_time=appt.get("hora", ""),
+                            duration_min=appt.get("duration_min", 30),
+                            calendar_event_id=calendar_event_id,
+                        )
+                        logger.info(f"Cita guardada en DB (text-confirm) — business_id: {business_db.id}")
+                        if business_db.owner_phone:
+                            await notify_owner_new_appointment(
+                                owner_phone=business_db.owner_phone,
+                                client_name=appt.get("nombre", ""),
+                                service_name=appt.get("servicio", ""),
+                                appointment_date=appt.get("fecha", ""),
+                                appointment_time=appt.get("hora", ""),
+                            )
+
+            # ── Debug logs ───────────────────────────────────────────────────────
+            servicio_guardado = state.appointment_data.get("servicio")
+            fechas_candidatas = state.appointment_data.get("fechas_candidatas")
+            logger.info(f"servicio_guardado: {servicio_guardado}")
+            logger.info(f"intent: {response_json.get('intent')}")
+            logger.info(f"fecha: {response_json.get('fecha')} | fechas_candidatas: {fechas_candidatas}")
+            logger.info(f"appointment_data completo: {state.appointment_data}")
+
+            # ── Lógica de respuesta ──────────────────────────────────────────────
+            intent         = response_json.get("intent")
+            fecha_parseada = response_json.get("fecha") or state.appointment_data.get("fecha")
+            text_lower     = text.lower()
+
+            necesita_lista_servicios = (
+                intent == "agendar" and not servicio_guardado
+            ) or (
+                intent == "consultar" and any(
+                    p in text_lower for p in
+                    ["servicio", "cuál", "cuales", "qué tienen", "que tienen", "opciones"]
+                )
+            )
+
+            necesita_lista_horarios = (
+                intent in ("agendar", "confirmar", "consultar")
+                and servicio_guardado
+                and fecha_parseada
+                and not state.appointment_data.get("hora")
+                and not fechas_candidatas
+            )
+
+            necesita_lista_horarios_multidia = (
+                intent in ("agendar", "consultar")
+                and servicio_guardado
+                and fechas_candidatas
+                and not state.appointment_data.get("fecha")
+                and not state.appointment_data.get("hora")
+            )
+
+            logger.info(f"necesita_lista_servicios: {necesita_lista_servicios}")
+            logger.info(f"necesita_lista_horarios: {necesita_lista_horarios}")
+            logger.info(f"necesita_lista_horarios_multidia: {necesita_lista_horarios_multidia}")
+            logger.info(f"fecha_parseada: {fecha_parseada}")
+
+            if necesita_lista_servicios:
+                business = await get_business_by_phone(phone_number_id)
+                nombre_c = state.appointment_data.get("nombre", "")
+                saludo = (
+                    f"¡Perfecto {nombre_c}! Te muestro nuestros servicios 😊"
+                    if nombre_c else
+                    "¡Con gusto! Te muestro nuestros servicios 😊"
+                )
+                await send_text_message(to=phone, message=saludo)
+                await asyncio.sleep(0.5)
+                await send_service_list(to=phone, services=business.services)
+
+            elif necesita_lista_horarios:
+                business     = await get_business_by_phone(phone_number_id)
+                duration_min = _get_service_duration(business.services, servicio_guardado)
+                creds        = _get_credentials()
+
+                slots = await check_availability(
+                    date_str=fecha_parseada,
+                    duration_min=duration_min,
+                    calendar_id=settings.google_calendar_id,
+                    credentials=creds
+                )
+
+                if slots:
+                    await send_text_message(to=phone, message=bot_response)
+                    await asyncio.sleep(0.5)
+                    await send_time_slots_list(
+                        to=phone,
+                        slots=slots,
+                        date_str=fecha_parseada,
+                        service_name=servicio_guardado
+                    )
+                else:
+                    await send_text_message(
+                        to=phone,
+                        message=(
+                            "Lo siento, no hay horarios disponibles para ese día 😔 "
+                            "¿Te gustaría intentar con otra fecha?"
+                        )
+                    )
+
+            elif necesita_lista_horarios_multidia:
+                await _send_multiday_slots(
+                    phone=phone,
+                    fechas=fechas_candidatas,
+                    servicio=servicio_guardado,
+                    phone_number_id=phone_number_id,
+                    state=state,
+                    bot_response=bot_response,
+                )
+
+            else:
+                await send_text_message(to=phone, message=bot_response)
+
         except Exception as e:
-            logger.error(f"Error logging conversación: {e}")
+            logger.error(f"Error procesando mensaje {msg.id}: {e}")
         finally:
             db.close()
-
-
-        # ── Actualizar estado ────────────────────────────────────────────────
-        if response_json.get("intent"):
-            state.current_intent = response_json["intent"]
-
-        for key in ["servicio", "fecha", "hora", "nombre"]:
-            if response_json.get(key) is not None:
-                state.appointment_data[key] = response_json[key]
-
-        # Fechas candidatas (multi-día)
-        if response_json.get("fechas_candidatas"):
-            state.appointment_data["fechas_candidatas"] = response_json["fechas_candidatas"]
-            # Si Claude devuelve candidatas, limpiar fecha individual para evitar conflicto
-            state.appointment_data["fecha"] = None
-        elif response_json.get("fecha"):
-            # Si Claude confirmó una fecha concreta, limpiar candidatas
-            state.appointment_data.pop("fechas_candidatas", None)
-
-        await state_manager.save_state(state)
-
-        # ── Google Calendar — crear evento si está todo confirmado ───────────
-        if response_json.get("intent") == "confirmar":
-            appt = state.appointment_data
-            if all(appt.get(k) for k in ["nombre", "servicio", "fecha", "hora"]):
-                await create_calendar_event(appt)
-
-        # ── Debug logs ───────────────────────────────────────────────────────
-        servicio_guardado   = state.appointment_data.get("servicio")
-        fechas_candidatas   = state.appointment_data.get("fechas_candidatas")
-        logger.info(f"servicio_guardado: {servicio_guardado}")
-        logger.info(f"intent: {response_json.get('intent')}")
-        logger.info(f"fecha: {response_json.get('fecha')} | fechas_candidatas: {fechas_candidatas}")
-        logger.info(f"appointment_data completo: {state.appointment_data}")
-
-        # ── Lógica de respuesta ──────────────────────────────────────────────
-        intent         = response_json.get("intent")
-        fecha_parseada = response_json.get("fecha") or state.appointment_data.get("fecha")
-        text_lower     = text.lower()
-
-        # ¿Necesita mostrar lista de servicios?
-        necesita_lista_servicios = (
-            intent == "agendar" and not servicio_guardado
-        ) or (
-            intent == "consultar" and any(
-                p in text_lower for p in
-                ["servicio", "cuál", "cuales", "qué tienen", "que tienen", "opciones"]
-            )
-        )
-
-        # ¿Necesita mostrar slots para UN día ya confirmado?
-        necesita_lista_horarios = (
-            intent in ("agendar", "confirmar", "consultar")
-            and servicio_guardado
-            and fecha_parseada
-            and not state.appointment_data.get("hora")
-            and not fechas_candidatas          # si hay candidatas, usa el bloque multi-día
-        )
-
-        # ¿Necesita mostrar slots para MÚLTIPLES días candidatos?
-        necesita_lista_horarios_multidia = (
-            intent in ("agendar", "consultar")
-            and servicio_guardado
-            and fechas_candidatas
-            and not state.appointment_data.get("fecha")   # aún no confirmó un día
-            and not state.appointment_data.get("hora")
-        )
-
-        logger.info(f"necesita_lista_servicios: {necesita_lista_servicios}")
-        logger.info(f"necesita_lista_horarios: {necesita_lista_horarios}")
-        logger.info(f"necesita_lista_horarios_multidia: {necesita_lista_horarios_multidia}")
-        logger.info(f"fecha_parseada: {fecha_parseada}")
-
-        # ── RAMA: lista de servicios ─────────────────────────────────────────
-        if necesita_lista_servicios:
-            business = await get_business_by_phone(phone_number_id)
-            nombre_c = state.appointment_data.get("nombre", "")
-            saludo   = (
-                f"¡Perfecto {nombre_c}! Te muestro nuestros servicios 😊"
-                if nombre_c else
-                "¡Con gusto! Te muestro nuestros servicios 😊"
-            )
-            await send_text_message(to=phone, message=saludo)
-            await asyncio.sleep(0.5)
-            await send_service_list(to=phone, services=business.services)
-
-        # ── RAMA: lista de horarios — día único ──────────────────────────────
-        elif necesita_lista_horarios:
-            business     = await get_business_by_phone(phone_number_id)
-            duration_min = _get_service_duration(business.services, servicio_guardado)
-            creds        = _get_credentials()
-
-            slots = await check_availability(
-                date_str=fecha_parseada,
-                duration_min=duration_min,
-                calendar_id=settings.google_calendar_id,
-                credentials=creds
-            )
-
-            if slots:
-                await send_text_message(to=phone, message=bot_response)
-                await asyncio.sleep(0.5)
-                await send_time_slots_list(
-                    to=phone,
-                    slots=slots,
-                    date_str=fecha_parseada,
-                    service_name=servicio_guardado
-                )
-            else:
-                await send_text_message(
-                    to=phone,
-                    message=(
-                        f"Lo siento, no hay horarios disponibles para ese día 😔 "
-                        f"¿Te gustaría intentar con otra fecha?"
-                    )
-                )
-
-        # ── RAMA: lista de horarios — multi-día ──────────────────────────────
-        elif necesita_lista_horarios_multidia:
-            await _send_multiday_slots(
-                phone=phone,
-                fechas=fechas_candidatas,
-                servicio=servicio_guardado,
-                phone_number_id=phone_number_id,
-                state=state,
-                bot_response=bot_response,
-            )
-
-        # ── RAMA: respuesta de texto normal ──────────────────────────────────
-        else:
-            # Caso especial: hay candidatas pero el cliente no preguntó horarios todavía.
-            # Valentina ya les preguntó cuál prefieren — solo enviamos el texto de Claude.
-            await send_text_message(to=phone, message=bot_response)
 
     return {"status": "ok"}
 
@@ -414,12 +401,7 @@ async def _send_multiday_slots(
     state,
     bot_response: str | None,
 ) -> None:
-    """Consulta Google Calendar para cada fecha candidata y envía una lista
-    interactiva de slots por día. Los IDs de slot incluyen la fecha para que
-    al seleccionar sepamos a qué día corresponde."""
-
-    # Limpiar candidatas INMEDIATAMENTE para evitar loop por reenvíos de Meta
-    fechas_a_procesar = list(fechas)  # copiar antes de limpiar
+    fechas_a_procesar = list(fechas)
     state.appointment_data.pop("fechas_candidatas", None)
     state.appointment_data["fecha"] = None
     await state_manager.save_state(state)
@@ -434,7 +416,7 @@ async def _send_multiday_slots(
 
     alguno_con_slots = False
 
-    for fecha_cand in fechas_a_procesar:   # ← cambiar fechas por fechas_a_procesar
+    for fecha_cand in fechas_a_procesar:
         slots = await check_availability(
             date_str=fecha_cand,
             duration_min=duration_min,
@@ -450,14 +432,13 @@ async def _send_multiday_slots(
                 message=f"📅 *{fecha_label.capitalize()}* — horarios disponibles:"
             )
             await asyncio.sleep(0.4)
-            # Enviamos la lista con IDs que incluyen la fecha: hora_{YYYYMMDD}_{HHMM}
-            fecha_sin_guiones = fecha_cand.replace("-", "")  # "2026-06-04" → "20260604"
+            fecha_sin_guiones = fecha_cand.replace("-", "")
             await send_time_slots_list(
                 to=phone,
                 slots=slots,
                 date_str=fecha_cand,
                 service_name=servicio,
-                id_prefix=f"hora_{fecha_sin_guiones}_",   # ← clave para el flujo multi-día
+                id_prefix=f"hora_{fecha_sin_guiones}_",
             )
             await asyncio.sleep(0.6)
         else:
@@ -478,7 +459,6 @@ async def _send_multiday_slots(
 
 
 def _get_service_duration(services: list[dict], service_name: str, default: int = 30) -> int:
-    """Devuelve la duración en minutos del servicio dado su nombre."""
     for svc in services:
         if svc.get("name") == service_name:
             return svc.get("duration_min", default)

@@ -6,13 +6,15 @@ EQKO Platform API v2 — agrega endpoints para:
 - Métricas por negocio
 - Jobs: trigger manual de recordatorios
 """
-import os
-from fastapi import APIRouter, Depends, HTTPException, Query, Header
+import json
+from fastapi import APIRouter, Depends, HTTPException, Query, Header, Security
+from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 from datetime import date, timedelta
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging import get_logger
 from app.models.db_models import Appointment, Conversation, Professional, Business
@@ -31,8 +33,24 @@ from app.schemas.platform import (
     ProfessionalCreate, ProfessionalUpdate, RescheduleRequest,
 )
 
-router = APIRouter(prefix="/platform", tags=["platform"])
 logger = get_logger(__name__)
+settings = get_settings()
+
+_api_key_header = APIKeyHeader(name="X-Platform-Key", auto_error=False)
+
+
+def require_platform_auth(api_key: Optional[str] = Security(_api_key_header)) -> None:
+    if not settings.platform_api_key:
+        raise HTTPException(status_code=503, detail="Platform API no configurada (falta PLATFORM_API_KEY)")
+    if api_key != settings.platform_api_key:
+        raise HTTPException(status_code=401, detail="API key inválida o faltante")
+
+
+router = APIRouter(
+    prefix="/platform",
+    tags=["platform"],
+    dependencies=[Depends(require_platform_auth)],
+)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -258,7 +276,6 @@ async def get_conversations(
         query = query.filter(Conversation.client_phone == client_phone)
 
     convs = query.order_by(Conversation.started_at.desc()).limit(limit).all()
-    import json
     return {
         "conversations": [
             {
@@ -281,7 +298,6 @@ async def get_conversation_detail(
     db: Session = Depends(get_db),
 ):
     """Detalle completo de una conversación con todos los mensajes."""
-    import json
     conv = db.query(Conversation).filter(
         Conversation.id == conversation_id,
         Conversation.business_id == business_id,
@@ -391,8 +407,9 @@ async def trigger_reminders(
     Protegido con header X-Cron-Secret.
     Se puede llamar desde Railway Cron o cualquier scheduler externo.
     """
-    cron_secret = os.environ.get("CRON_SECRET", "")
-    if cron_secret and x_cron_secret != cron_secret:
+    if not settings.cron_secret:
+        raise HTTPException(status_code=503, detail="Endpoint no configurado (falta CRON_SECRET)")
+    if x_cron_secret != settings.cron_secret:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     from app.jobs.reminder_cron import run_reminders

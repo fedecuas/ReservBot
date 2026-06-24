@@ -95,7 +95,8 @@ async def create_calendar_event(appointment_data: dict) -> str | None:
             logger.warning("create_calendar_event: falta fecha u hora")
             return None
 
-        start_dt = datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M")
+        tz = pytz.timezone("America/Mexico_City")
+        start_dt = tz.localize(datetime.strptime(f"{fecha} {hora}", "%Y-%m-%d %H:%M"))
         duration = appointment_data.get("duration_min", 60)
         end_dt = start_dt + timedelta(minutes=duration)
 

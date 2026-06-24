@@ -36,13 +36,13 @@ DEMO_BUSINESS = BusinessConfig(
         "saturday": {"start": "09:00", "end": "19:00"},
         "sunday": None  # Cerrado
     },
-    phone_number_id="1147614285101997"  # El número del negocio del cliente
+    phone_number_id="DEMO"
 )
 
 # Almacenamiento en memoria temporal
 _businesses_db: dict[str, BusinessConfig] = {
     DEMO_BUSINESS.business_id: DEMO_BUSINESS,
-    DEMO_BUSINESS.phone_number_id: DEMO_BUSINESS
+    DEMO_BUSINESS.phone_number_id: DEMO_BUSINESS,
 }
 
 
